@@ -1,0 +1,709 @@
+openapi: 3.0.3
+info:
+  title: OMM API
+  version: 0.1.0
+servers:
+  - url: /api
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+    AuthOtpRequest:
+      type: object
+      required: [phone]
+      properties:
+        phone:
+          type: string
+    AuthOtpResponse:
+      type: object
+      properties:
+        otp_id:
+          type: string
+          format: uuid
+        expires_at:
+          type: string
+          format: date-time
+        debug_code:
+          type: string
+    AuthVerifyRequest:
+      type: object
+      required: [otp_id, phone, code]
+      properties:
+        otp_id:
+          type: string
+          format: uuid
+        phone:
+          type: string
+        code:
+          type: string
+    AuthVerifyResponse:
+      type: object
+      properties:
+        token:
+          type: string
+        user:
+          $ref: "#/components/schemas/User"
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        phone:
+          type: string
+        name:
+          type: string
+        avatar_url:
+          type: string
+        role:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+    UpdateProfileRequest:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+        avatar_url:
+          type: string
+    Challenge:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        merchant_id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        description:
+          type: string
+        target_miles:
+          type: number
+        expires_at:
+          type: string
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+    CreateChallengeRequest:
+      type: object
+      required: [title, target_miles, expires_at]
+      properties:
+        title:
+          type: string
+        description:
+          type: string
+        target_miles:
+          type: number
+        expires_at:
+          type: string
+          format: date-time
+    ChallengeRegistration:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        challenge_id:
+          type: string
+          format: uuid
+        user_id:
+          type: string
+          format: uuid
+        registered_at:
+          type: string
+          format: date-time
+        status:
+          type: string
+    StartSessionRequest:
+      type: object
+      required: [challenge_id, start_time, start_lat, start_lng]
+      properties:
+        challenge_id:
+          type: string
+          format: uuid
+        start_time:
+          type: string
+          format: date-time
+        start_lat:
+          type: number
+        start_lng:
+          type: number
+        steps_start:
+          type: integer
+          format: int32
+        miles_start:
+          type: number
+    StartSessionResponse:
+      type: object
+      properties:
+        session_id:
+          type: string
+          format: uuid
+        hmac_secret:
+          type: string
+        status:
+          type: string
+        start_time:
+          type: string
+          format: date-time
+    Checkpoint:
+      type: object
+      required: [lat, lng, recorded_at]
+      properties:
+        lat:
+          type: number
+        lng:
+          type: number
+        recorded_at:
+          type: string
+          format: date-time
+        steps:
+          type: integer
+          format: int32
+    UploadCheckpointsRequest:
+      type: object
+      required: [points]
+      properties:
+        points:
+          type: array
+          items:
+            $ref: "#/components/schemas/Checkpoint"
+    StopSessionRequest:
+      type: object
+      required: [session_id, end_time, end_lat, end_lng]
+      properties:
+        session_id:
+          type: string
+          format: uuid
+        end_time:
+          type: string
+          format: date-time
+        end_lat:
+          type: number
+        end_lng:
+          type: number
+        steps_end:
+          type: integer
+          format: int32
+        miles_end:
+          type: number
+    StopSessionResponse:
+      type: object
+      properties:
+        session_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+        distance_miles:
+          type: number
+        steps_delta:
+          type: integer
+          format: int32
+        step_ratio:
+          type: number
+        voucher_code:
+          type: string
+        voucher_status:
+          type: string
+    MerchantRegisterRequest:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+        category:
+          type: string
+        address_lat:
+          type: number
+        address_lng:
+          type: number
+        logo_url:
+          type: string
+        description:
+          type: string
+    Merchant:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        owner_user_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        category:
+          type: string
+        address_lat:
+          type: number
+        address_lng:
+          type: number
+        logo_url:
+          type: string
+        description:
+          type: string
+    MerchantDashboard:
+      type: object
+      properties:
+        total_challenges:
+          type: integer
+          format: int64
+        total_redemptions:
+          type: integer
+          format: int64
+        active_customers:
+          type: integer
+          format: int64
+    MerchantChallenge:
+      allOf:
+        - $ref: "#/components/schemas/Challenge"
+        - type: object
+          properties:
+            participants:
+              type: integer
+              format: int64
+    CreateEmployeeRequest:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+        phone:
+          type: string
+    Employee:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        merchant_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        phone:
+          type: string
+        code:
+          type: string
+        status:
+          type: string
+    Voucher:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        code:
+          type: string
+        status:
+          type: string
+        challenge_id:
+          type: string
+          format: uuid
+        session_id:
+          type: string
+          format: uuid
+        issued_at:
+          type: string
+          format: date-time
+        redeemed_at:
+          type: string
+          format: date-time
+        redeemed_by_employee_id:
+          type: string
+          format: uuid
+    RedeemVoucherRequest:
+      type: object
+      required: [voucher_code, employee_code]
+      properties:
+        voucher_code:
+          type: string
+        employee_code:
+          type: string
+    RedeemVoucherResponse:
+      type: object
+      properties:
+        voucher_id:
+          type: string
+          format: uuid
+        employee_id:
+          type: string
+          format: uuid
+        redeemed_at:
+          type: string
+          format: date-time
+        voucher_code:
+          type: string
+    AdminStats:
+      type: object
+      properties:
+        total_users:
+          type: integer
+          format: int64
+        total_merchants:
+          type: integer
+          format: int64
+        total_distance_miles:
+          type: number
+paths:
+  /auth/otp:
+    post:
+      summary: Send OTP
+      operationId: sendOtp
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AuthOtpRequest"
+      responses:
+        "200":
+          description: OTP created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthOtpResponse"
+        "400":
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /auth/verify:
+    post:
+      summary: Verify OTP
+      operationId: verifyOtp
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AuthVerifyRequest"
+      responses:
+        "200":
+          description: Token issued
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthVerifyResponse"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /users/profile:
+    post:
+      summary: Update profile
+      operationId: updateProfile
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateProfileRequest"
+      responses:
+        "200":
+          description: Updated user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /users/vouchers:
+    get:
+      summary: List vouchers
+      operationId: listVouchers
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Voucher list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Voucher"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /sessions/start:
+    post:
+      summary: Start session
+      operationId: startSession
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StartSessionRequest"
+      responses:
+        "200":
+          description: Session started
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StartSessionResponse"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /sessions/{id}/checkpoints:
+    post:
+      summary: Upload checkpoints
+      operationId: uploadCheckpoints
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: X-Signature
+          in: header
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UploadCheckpointsRequest"
+      responses:
+        "200":
+          description: Checkpoints stored
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  inserted:
+                    type: integer
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /sessions/stop:
+    post:
+      summary: Stop session
+      operationId: stopSession
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StopSessionRequest"
+      responses:
+        "200":
+          description: Session stopped
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StopSessionResponse"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /challenges:
+    get:
+      summary: List challenges
+      operationId: listChallenges
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Challenge list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Challenge"
+    post:
+      summary: Create challenge
+      operationId: createChallenge
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateChallengeRequest"
+      responses:
+        "200":
+          description: Challenge created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Challenge"
+  /challenges/{id}/register:
+    post:
+      summary: Register for challenge
+      operationId: registerChallenge
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Registration created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChallengeRegistration"
+  /merchants/register:
+    post:
+      summary: Register merchant
+      operationId: registerMerchant
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MerchantRegisterRequest"
+      responses:
+        "200":
+          description: Merchant created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Merchant"
+  /merchants/dashboard:
+    get:
+      summary: Merchant dashboard
+      operationId: merchantDashboard
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Dashboard stats
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MerchantDashboard"
+  /merchants/challenges:
+    get:
+      summary: List merchant challenges
+      operationId: listMerchantChallenges
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Merchant challenges
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/MerchantChallenge"
+  /merchants/employees:
+    get:
+      summary: List employees
+      operationId: listEmployees
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Employee list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Employee"
+    post:
+      summary: Create employee
+      operationId: createEmployee
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateEmployeeRequest"
+      responses:
+        "200":
+          description: Employee created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Employee"
+  /vouchers/redeem:
+    post:
+      summary: Redeem voucher
+      operationId: redeemVoucher
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RedeemVoucherRequest"
+      responses:
+        "200":
+          description: Voucher redeemed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RedeemVoucherResponse"
+  /admin/stats:
+    get:
+      summary: Admin stats
+      operationId: adminStats
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Admin stats
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminStats"

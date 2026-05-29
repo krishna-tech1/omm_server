@@ -1,0 +1,70 @@
+package http
+
+import (
+	"time"
+
+	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v2/middleware/logger"
+	"github.com/gofiber/fiber/v2/middleware/recover"
+	"github.com/jackc/pgx/v5/pgxpool"
+
+	"one-more-mile/server/internal/config"
+	"one-more-mile/server/internal/http/middleware"
+	db "one-more-mile/server/internal/sqlc"
+)
+
+func NewServer(cfg config.Config, queries *db.Queries, pool *pgxpool.Pool) *fiber.App {
+	app := fiber.New(fiber.Config{
+		AppName:      "omm-server",
+		ReadTimeout:  10 * time.Second,
+		WriteTimeout: 10 * time.Second,
+	})
+
+	app.Use(recover.New())
+	if cfg.Env == "dev" {
+		app.Use(logger.New())
+	}
+
+	handler := NewHandler(cfg, queries, pool)
+
+	app.Get("/health", func(c *fiber.Ctx) error {
+		return c.SendStatus(fiber.StatusOK)
+	})
+
+	api := app.Group("/api")
+
+	auth := api.Group("/auth")
+	auth.Post("/otp", handler.SendOTP)
+	auth.Post("/verify", handler.VerifyOTP)
+
+	protected := api.Group("", middleware.Auth(cfg))
+
+	users := protected.Group("/users")
+	users.Post("/profile", handler.UpdateProfile)
+	users.Get("/vouchers", handler.ListUserVouchers)
+
+	sessions := protected.Group("/sessions")
+	sessions.Post("/start", handler.StartSession)
+	sessions.Post("/:id/checkpoints", handler.UploadCheckpoints)
+	sessions.Post("/stop", handler.StopSession)
+
+	challenges := protected.Group("/challenges")
+	challenges.Get("", handler.ListChallenges)
+	challenges.Post("/:id/register", handler.RegisterChallenge)
+	challenges.Post("", middleware.RequireRole("merchant", "admin"), handler.CreateChallenge)
+
+	merchants := protected.Group("/merchants")
+	merchants.Post("/register", handler.RegisterMerchant)
+	merchants.Get("/dashboard", middleware.RequireRole("merchant", "admin"), handler.MerchantDashboard)
+	merchants.Get("/challenges", middleware.RequireRole("merchant", "admin"), handler.ListMerchantChallenges)
+	merchants.Get("/employees", middleware.RequireRole("merchant", "admin"), handler.ListEmployees)
+	merchants.Post("/employees", middleware.RequireRole("merchant", "admin"), handler.CreateEmployee)
+
+	vouchers := protected.Group("/vouchers")
+	vouchers.Post("/redeem", middleware.RequireRole("merchant", "admin"), handler.RedeemVoucher)
+
+	admin := protected.Group("/admin", middleware.RequireRole("admin"))
+	admin.Get("/stats", handler.AdminStats)
+
+	return app
+}
