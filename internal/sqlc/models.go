@@ -5,9 +5,56 @@
 package db
 
 import (
+	"database/sql/driver"
+	"fmt"
+
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 )
+
+type UserRole string
+
+const (
+	UserRoleUser     UserRole = "user"
+	UserRoleMerchant UserRole = "merchant"
+	UserRoleEmployee UserRole = "employee"
+	UserRoleAdmin    UserRole = "admin"
+)
+
+func (e *UserRole) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = UserRole(s)
+	case string:
+		*e = UserRole(s)
+	default:
+		return fmt.Errorf("unsupported scan type for UserRole: %T", src)
+	}
+	return nil
+}
+
+type NullUserRole struct {
+	UserRole UserRole `json:"user_role"`
+	Valid    bool     `json:"valid"` // Valid is true if UserRole is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullUserRole) Scan(value interface{}) error {
+	if value == nil {
+		ns.UserRole, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.UserRole.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullUserRole) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.UserRole), nil
+}
 
 type Challenge struct {
 	ID          uuid.UUID          `json:"id"`
@@ -27,9 +74,29 @@ type ChallengeRegistration struct {
 	Status       string             `json:"status"`
 }
 
+type Coupon struct {
+	ID                   uuid.UUID          `json:"id"`
+	UserID               uuid.UUID          `json:"user_id"`
+	ChallengeID          uuid.UUID          `json:"challenge_id"`
+	SessionID            uuid.UUID          `json:"session_id"`
+	Code                 string             `json:"code"`
+	Status               string             `json:"status"`
+	IssuedAt             pgtype.Timestamptz `json:"issued_at"`
+	RedeemedAt           pgtype.Timestamptz `json:"redeemed_at"`
+	RedeemedByEmployeeID pgtype.UUID        `json:"redeemed_by_employee_id"`
+}
+
+type CouponRedemption struct {
+	ID         uuid.UUID          `json:"id"`
+	CouponID   uuid.UUID          `json:"coupon_id"`
+	EmployeeID uuid.UUID          `json:"employee_id"`
+	RedeemedAt pgtype.Timestamptz `json:"redeemed_at"`
+}
+
 type Employee struct {
 	ID         uuid.UUID          `json:"id"`
 	MerchantID uuid.UUID          `json:"merchant_id"`
+	UserID     uuid.UUID          `json:"user_id"`
 	Name       string             `json:"name"`
 	Phone      string             `json:"phone"`
 	Code       string             `json:"code"`
@@ -49,12 +116,8 @@ type Merchant struct {
 	CreatedAt   pgtype.Timestamptz `json:"created_at"`
 }
 
-type Otp struct {
-	ID        uuid.UUID          `json:"id"`
-	Phone     string             `json:"phone"`
-	CodeHash  string             `json:"code_hash"`
-	ExpiresAt pgtype.Timestamptz `json:"expires_at"`
-	UsedAt    pgtype.Timestamptz `json:"used_at"`
+type MerchantCategory struct {
+	Name      string             `json:"name"`
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 }
 
@@ -79,42 +142,11 @@ type Session struct {
 	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
 }
 
-type SessionCheckpoint struct {
-	ID             int64              `json:"id"`
-	SessionID      uuid.UUID          `json:"session_id"`
-	Lat            float64            `json:"lat"`
-	Lng            float64            `json:"lng"`
-	RecordedAt     pgtype.Timestamptz `json:"recorded_at"`
-	Steps          int32              `json:"steps"`
-	DistanceMeters float64            `json:"distance_meters"`
-	SpeedMps       float64            `json:"speed_mps"`
-	SpeedViolation bool               `json:"speed_violation"`
-}
-
 type User struct {
 	ID        uuid.UUID          `json:"id"`
 	Phone     string             `json:"phone"`
 	Name      string             `json:"name"`
 	AvatarUrl string             `json:"avatar_url"`
-	Role      string             `json:"role"`
+	Role      UserRole           `json:"role"`
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
-}
-
-type Voucher struct {
-	ID                   uuid.UUID          `json:"id"`
-	UserID               uuid.UUID          `json:"user_id"`
-	ChallengeID          uuid.UUID          `json:"challenge_id"`
-	SessionID            uuid.UUID          `json:"session_id"`
-	Code                 string             `json:"code"`
-	Status               string             `json:"status"`
-	IssuedAt             pgtype.Timestamptz `json:"issued_at"`
-	RedeemedAt           pgtype.Timestamptz `json:"redeemed_at"`
-	RedeemedByEmployeeID pgtype.UUID        `json:"redeemed_by_employee_id"`
-}
-
-type VoucherRedemption struct {
-	ID         uuid.UUID          `json:"id"`
-	VoucherID  uuid.UUID          `json:"voucher_id"`
-	EmployeeID uuid.UUID          `json:"employee_id"`
-	RedeemedAt pgtype.Timestamptz `json:"redeemed_at"`
 }

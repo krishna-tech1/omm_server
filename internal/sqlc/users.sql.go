@@ -20,7 +20,7 @@ RETURNING id, phone, name, avatar_url, role, created_at
 type CreateUserParams struct {
 	ID    uuid.UUID `json:"id"`
 	Phone string    `json:"phone"`
-	Role  string    `json:"role"`
+	Role  UserRole  `json:"role"`
 }
 
 func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, error) {
@@ -112,7 +112,7 @@ WHERE id = $1
 
 type UpdateUserRoleParams struct {
 	ID   uuid.UUID `json:"id"`
-	Role string    `json:"role"`
+	Role UserRole  `json:"role"`
 }
 
 func (q *Queries) UpdateUserRole(ctx context.Context, arg UpdateUserRoleParams) error {

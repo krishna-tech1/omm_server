@@ -25,7 +25,7 @@ func mapUser(user db.User) userResponse {
 		Phone:     user.Phone,
 		Name:      user.Name,
 		AvatarURL: user.AvatarUrl,
-		Role:      user.Role,
+		Role:      string(user.Role),
 		CreatedAt: fromPgTimestamptz(user.CreatedAt),
 	}
 }
@@ -61,7 +61,7 @@ func (h *Handler) UpdateProfile(c *fiber.Ctx) error {
 	return c.JSON(mapUser(user))
 }
 
-type voucherResponse struct {
+type couponResponse struct {
 	ID               uuid.UUID  `json:"id"`
 	Code             string     `json:"code"`
 	Status           string     `json:"status"`
@@ -72,7 +72,7 @@ type voucherResponse struct {
 	RedeemedEmployee *uuid.UUID `json:"redeemed_by_employee_id,omitempty"`
 }
 
-func (h *Handler) ListUserVouchers(c *fiber.Ctx) error {
+func (h *Handler) ListUserCoupons(c *fiber.Ctx) error {
 	claims, ok := getClaims(c)
 	if !ok {
 		return h.respondError(c, fiber.StatusUnauthorized, "unauthorized")
@@ -81,29 +81,29 @@ func (h *Handler) ListUserVouchers(c *fiber.Ctx) error {
 	ctx, cancel := h.requestContext()
 	defer cancel()
 
-	vouchers, err := h.db.ListVouchersByUser(ctx, claims.UserID)
+	coupons, err := h.db.ListCouponsByUser(ctx, claims.UserID)
 	if err != nil {
-		return h.respondError(c, fiber.StatusInternalServerError, "failed to load vouchers")
+		return h.respondError(c, fiber.StatusInternalServerError, "failed to load coupons")
 	}
 
-	response := make([]voucherResponse, 0, len(vouchers))
-	for _, voucher := range vouchers {
-		response = append(response, mapVoucher(voucher))
+	response := make([]couponResponse, 0, len(coupons))
+	for _, coupon := range coupons {
+		response = append(response, mapCoupon(coupon))
 	}
 
 	return c.JSON(response)
 }
 
-func mapVoucher(voucher db.Voucher) voucherResponse {
-	return voucherResponse{
-		ID:               voucher.ID,
-		Code:             voucher.Code,
-		Status:           voucher.Status,
-		ChallengeID:      voucher.ChallengeID,
-		SessionID:        voucher.SessionID,
-		IssuedAt:         fromPgTimestamptz(voucher.IssuedAt),
-		RedeemedAt:       timePtrFromTimestamptz(voucher.RedeemedAt),
-		RedeemedEmployee: uuidPtrFromUUID(voucher.RedeemedByEmployeeID),
+func mapCoupon(coupon db.Coupon) couponResponse {
+	return couponResponse{
+		ID:               coupon.ID,
+		Code:             coupon.Code,
+		Status:           coupon.Status,
+		ChallengeID:      coupon.ChallengeID,
+		SessionID:        coupon.SessionID,
+		IssuedAt:         fromPgTimestamptz(coupon.IssuedAt),
+		RedeemedAt:       timePtrFromTimestamptz(coupon.RedeemedAt),
+		RedeemedEmployee: uuidPtrFromUUID(coupon.RedeemedByEmployeeID),
 	}
 }
 

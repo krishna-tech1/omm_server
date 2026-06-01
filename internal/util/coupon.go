@@ -4,9 +4,9 @@ import (
 	"crypto/rand"
 )
 
-const voucherAlphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+const couponAlphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 
-func RandomVoucherCode(length int) (string, error) {
+func RandomCouponCode(length int) (string, error) {
 	if length <= 0 {
 		return "", nil
 	}
@@ -19,7 +19,7 @@ func RandomVoucherCode(length int) (string, error) {
 	}
 
 	for i := 0; i < length; i++ {
-		output[i] = voucherAlphabet[int(buf[i])%len(voucherAlphabet)]
+		output[i] = couponAlphabet[int(buf[i])%len(couponAlphabet)]
 	}
 
 	return string(output), nil

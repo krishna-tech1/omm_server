@@ -1,30 +1,35 @@
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
+CREATE TYPE user_role AS ENUM ('user', 'merchant', 'employee', 'admin');
+
 CREATE TABLE users (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     phone text NOT NULL UNIQUE,
     name text NOT NULL DEFAULT '',
     avatar_url text NOT NULL DEFAULT '',
-    role text NOT NULL DEFAULT 'user',
+    role user_role NOT NULL DEFAULT 'user',
     created_at timestamptz NOT NULL DEFAULT now()
 );
 
-CREATE TABLE otps (
-    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    phone text NOT NULL,
-    code_hash text NOT NULL,
-    expires_at timestamptz NOT NULL,
-    used_at timestamptz,
+CREATE TABLE merchant_categories (
+    name text PRIMARY KEY,
     created_at timestamptz NOT NULL DEFAULT now()
 );
 
-CREATE INDEX otps_phone_idx ON otps(phone);
+INSERT INTO merchant_categories (name) VALUES
+    ('Uncategorized'),
+    ('Lifestyle'),
+    ('Sports Equipment'),
+    ('Fitness'),
+    ('Outdoors'),
+    ('Food & Beverage'),
+    ('Apparel');
 
 CREATE TABLE merchants (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     owner_user_id uuid NOT NULL REFERENCES users(id),
     name text NOT NULL,
-    category text NOT NULL DEFAULT '',
+    category text NOT NULL DEFAULT 'Uncategorized' REFERENCES merchant_categories(name) ON UPDATE CASCADE ON DELETE RESTRICT,
     address_lat double precision NOT NULL DEFAULT 0,
     address_lng double precision NOT NULL DEFAULT 0,
     logo_url text NOT NULL DEFAULT '',
@@ -82,34 +87,24 @@ CREATE TABLE sessions (
 CREATE INDEX sessions_user_idx ON sessions(user_id);
 CREATE INDEX sessions_challenge_idx ON sessions(challenge_id);
 
-CREATE TABLE session_checkpoints (
-    id bigserial PRIMARY KEY,
-    session_id uuid NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
-    lat double precision NOT NULL,
-    lng double precision NOT NULL,
-    recorded_at timestamptz NOT NULL,
-    steps integer NOT NULL DEFAULT 0,
-    distance_meters double precision NOT NULL DEFAULT 0,
-    speed_mps double precision NOT NULL DEFAULT 0,
-    speed_violation boolean NOT NULL DEFAULT false
-);
-
-CREATE INDEX checkpoints_session_time_idx ON session_checkpoints(session_id, recorded_at);
-
 CREATE TABLE employees (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     merchant_id uuid NOT NULL REFERENCES merchants(id),
+    user_id uuid NOT NULL REFERENCES users(id),
     name text NOT NULL,
-    phone text NOT NULL DEFAULT '',
+    phone text NOT NULL,
     code text NOT NULL,
     status text NOT NULL DEFAULT 'active',
     created_at timestamptz NOT NULL DEFAULT now(),
-    UNIQUE (merchant_id, code)
+    UNIQUE (merchant_id, code),
+    UNIQUE (user_id)
 );
 
 CREATE INDEX employees_merchant_idx ON employees(merchant_id);
+CREATE INDEX employees_user_idx ON employees(user_id);
+CREATE INDEX employees_phone_idx ON employees(phone);
 
-CREATE TABLE vouchers (
+CREATE TABLE coupons (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id uuid NOT NULL REFERENCES users(id),
     challenge_id uuid NOT NULL REFERENCES challenges(id),
@@ -121,12 +116,13 @@ CREATE TABLE vouchers (
     redeemed_by_employee_id uuid REFERENCES employees(id)
 );
 
-CREATE TABLE voucher_redemptions (
+CREATE TABLE coupon_redemptions (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    voucher_id uuid NOT NULL REFERENCES vouchers(id),
+    coupon_id uuid NOT NULL REFERENCES coupons(id),
     employee_id uuid NOT NULL REFERENCES employees(id),
     redeemed_at timestamptz NOT NULL DEFAULT now(),
-    UNIQUE (voucher_id)
+    UNIQUE (coupon_id)
 );
 
-CREATE INDEX vouchers_user_idx ON vouchers(user_id);
+CREATE INDEX coupons_user_idx ON coupons(user_id);
+CREATE INDEX coupons_challenge_idx ON coupons(challenge_id);

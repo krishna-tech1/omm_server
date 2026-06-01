@@ -12,36 +12,6 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-const createCheckpoint = `-- name: CreateCheckpoint :exec
-INSERT INTO session_checkpoints (session_id, lat, lng, recorded_at, steps, distance_meters, speed_mps, speed_violation)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-`
-
-type CreateCheckpointParams struct {
-	SessionID      uuid.UUID          `json:"session_id"`
-	Lat            float64            `json:"lat"`
-	Lng            float64            `json:"lng"`
-	RecordedAt     pgtype.Timestamptz `json:"recorded_at"`
-	Steps          int32              `json:"steps"`
-	DistanceMeters float64            `json:"distance_meters"`
-	SpeedMps       float64            `json:"speed_mps"`
-	SpeedViolation bool               `json:"speed_violation"`
-}
-
-func (q *Queries) CreateCheckpoint(ctx context.Context, arg CreateCheckpointParams) error {
-	_, err := q.db.Exec(ctx, createCheckpoint,
-		arg.SessionID,
-		arg.Lat,
-		arg.Lng,
-		arg.RecordedAt,
-		arg.Steps,
-		arg.DistanceMeters,
-		arg.SpeedMps,
-		arg.SpeedViolation,
-	)
-	return err
-}
-
 const createSession = `-- name: CreateSession :one
 INSERT INTO sessions (id, user_id, challenge_id, start_time, start_lat, start_lng, steps_start, miles_start, status, hmac_secret)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
@@ -95,31 +65,6 @@ func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) (S
 		&i.HmacSecret,
 		&i.CreatedAt,
 		&i.UpdatedAt,
-	)
-	return i, err
-}
-
-const getLastCheckpoint = `-- name: GetLastCheckpoint :one
-SELECT id, session_id, lat, lng, recorded_at, steps, distance_meters, speed_mps, speed_violation
-FROM session_checkpoints
-WHERE session_id = $1
-ORDER BY recorded_at DESC
-LIMIT 1
-`
-
-func (q *Queries) GetLastCheckpoint(ctx context.Context, sessionID uuid.UUID) (SessionCheckpoint, error) {
-	row := q.db.QueryRow(ctx, getLastCheckpoint, sessionID)
-	var i SessionCheckpoint
-	err := row.Scan(
-		&i.ID,
-		&i.SessionID,
-		&i.Lat,
-		&i.Lng,
-		&i.RecordedAt,
-		&i.Steps,
-		&i.DistanceMeters,
-		&i.SpeedMps,
-		&i.SpeedViolation,
 	)
 	return i, err
 }
@@ -189,19 +134,6 @@ func (q *Queries) GetSessionForUser(ctx context.Context, arg GetSessionForUserPa
 		&i.UpdatedAt,
 	)
 	return i, err
-}
-
-const sumCheckpointDistanceMeters = `-- name: SumCheckpointDistanceMeters :one
-SELECT COALESCE(SUM(distance_meters), 0)::double precision
-FROM session_checkpoints
-WHERE session_id = $1
-`
-
-func (q *Queries) SumCheckpointDistanceMeters(ctx context.Context, sessionID uuid.UUID) (float64, error) {
-	row := q.db.QueryRow(ctx, sumCheckpointDistanceMeters, sessionID)
-	var column_1 float64
-	err := row.Scan(&column_1)
-	return column_1, err
 }
 
 const updateSessionEnd = `-- name: UpdateSessionEnd :exec

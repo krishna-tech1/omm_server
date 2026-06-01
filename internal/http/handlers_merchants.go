@@ -3,12 +3,14 @@ package http
 import (
 	"context"
 	"errors"
+	"strings"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 
+	"one-more-mile/server/internal/http/middleware"
 	db "one-more-mile/server/internal/sqlc"
 	"one-more-mile/server/internal/util"
 )
@@ -42,6 +44,7 @@ type merchantDashboardResponse struct {
 type employeeResponse struct {
 	ID         uuid.UUID `json:"id"`
 	MerchantID uuid.UUID `json:"merchant_id"`
+	UserID     uuid.UUID `json:"user_id"`
 	Name       string    `json:"name"`
 	Phone      string    `json:"phone"`
 	Code       string    `json:"code"`
@@ -50,8 +53,15 @@ type employeeResponse struct {
 
 type createEmployeeRequest struct {
 	Name  string `json:"name" validate:"required"`
-	Phone string `json:"phone"`
+	Phone string `json:"phone" validate:"required"`
 }
+
+type updateEmployeeRequest struct {
+	Name   string `json:"name"`
+	Status string `json:"status"`
+}
+
+const defaultCategoryName = "Uncategorized"
 
 func (h *Handler) RegisterMerchant(c *fiber.Ctx) error {
 	claims, ok := getClaims(c)
@@ -67,6 +77,17 @@ func (h *Handler) RegisterMerchant(c *fiber.Ctx) error {
 	ctx, cancel := h.requestContext()
 	defer cancel()
 
+	category := strings.TrimSpace(req.Category)
+	if category == "" {
+		category = defaultCategoryName
+	}
+	if _, err := h.db.GetCategoryByName(ctx, category); err != nil {
+		if err == pgx.ErrNoRows {
+			return h.respondError(c, fiber.StatusBadRequest, "invalid category")
+		}
+		return h.respondError(c, fiber.StatusInternalServerError, "failed to load category")
+	}
+
 	tx, err := h.pool.Begin(ctx)
 	if err != nil {
 		return h.respondError(c, fiber.StatusInternalServerError, "failed to start transaction")
@@ -79,7 +100,7 @@ func (h *Handler) RegisterMerchant(c *fiber.Ctx) error {
 		ID:          uuid.New(),
 		OwnerUserID: claims.UserID,
 		Name:        req.Name,
-		Category:    req.Category,
+		Category:    category,
 		AddressLat:  req.AddressLat,
 		AddressLng:  req.AddressLng,
 		LogoUrl:     req.LogoURL,
@@ -91,7 +112,7 @@ func (h *Handler) RegisterMerchant(c *fiber.Ctx) error {
 
 	if err := queries.UpdateUserRole(ctx, db.UpdateUserRoleParams{
 		ID:   claims.UserID,
-		Role: "merchant",
+		Role: db.UserRoleMerchant,
 	}); err != nil {
 		return h.respondError(c, fiber.StatusInternalServerError, "failed to update user role")
 	}
@@ -100,7 +121,16 @@ func (h *Handler) RegisterMerchant(c *fiber.Ctx) error {
 		return h.respondError(c, fiber.StatusInternalServerError, "failed to commit merchant")
 	}
 
-	return c.JSON(mapMerchant(merchant))
+	// Generate new token with merchant role
+	token, err := middleware.GenerateToken(h.cfg, claims.UserID, string(db.UserRoleMerchant))
+	if err != nil {
+		return h.respondError(c, fiber.StatusInternalServerError, "failed to generate token")
+	}
+
+	return c.JSON(fiber.Map{
+		"merchant": mapMerchant(merchant),
+		"token":    token,
+	})
 }
 
 func (h *Handler) MerchantDashboard(c *fiber.Ctx) error {
@@ -184,7 +214,39 @@ func (h *Handler) CreateEmployee(c *fiber.Ctx) error {
 		return h.respondError(c, fiber.StatusInternalServerError, "failed to load merchant")
 	}
 
-	employee, err := h.createEmployeeWithUniqueCode(ctx, merchant.ID, req)
+	user, err := h.db.GetUserByPhone(ctx, req.Phone)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			user, err = h.db.CreateUser(ctx, db.CreateUserParams{
+				ID:    uuid.New(),
+				Phone: req.Phone,
+				Role:  db.UserRoleEmployee,
+			})
+			if err != nil {
+				return h.respondError(c, fiber.StatusInternalServerError, "failed to create employee user")
+			}
+		} else {
+			return h.respondError(c, fiber.StatusInternalServerError, "failed to load employee user")
+		}
+	}
+
+	if user.Role != db.UserRoleEmployee {
+		if err := h.db.UpdateUserRole(ctx, db.UpdateUserRoleParams{
+			ID:   user.ID,
+			Role: db.UserRoleEmployee,
+		}); err != nil {
+			return h.respondError(c, fiber.StatusInternalServerError, "failed to update employee role")
+		}
+		user.Role = db.UserRoleEmployee
+	}
+
+	if _, err := h.db.GetEmployeeByUserID(ctx, user.ID); err == nil {
+		return h.respondError(c, fiber.StatusConflict, "employee already exists")
+	} else if err != pgx.ErrNoRows {
+		return h.respondError(c, fiber.StatusInternalServerError, "failed to load employee")
+	}
+
+	employee, err := h.createEmployeeWithUniqueCode(ctx, merchant.ID, user, req)
 	if err != nil {
 		return h.respondError(c, fiber.StatusInternalServerError, err.Error())
 	}
@@ -192,7 +254,7 @@ func (h *Handler) CreateEmployee(c *fiber.Ctx) error {
 	return c.JSON(mapEmployee(employee))
 }
 
-func (h *Handler) createEmployeeWithUniqueCode(ctx context.Context, merchantID uuid.UUID, req createEmployeeRequest) (db.Employee, error) {
+func (h *Handler) createEmployeeWithUniqueCode(ctx context.Context, merchantID uuid.UUID, user db.User, req createEmployeeRequest) (db.Employee, error) {
 	var lastErr error
 	for i := 0; i < 10; i++ {
 		code, err := util.RandomDigits(3)
@@ -203,8 +265,9 @@ func (h *Handler) createEmployeeWithUniqueCode(ctx context.Context, merchantID u
 		employee, err := h.db.CreateEmployee(ctx, db.CreateEmployeeParams{
 			ID:         uuid.New(),
 			MerchantID: merchantID,
+			UserID:     user.ID,
 			Name:       req.Name,
-			Phone:      req.Phone,
+			Phone:      user.Phone,
 			Code:       code,
 			Status:     "active",
 		})
@@ -251,9 +314,93 @@ func mapEmployee(employee db.Employee) employeeResponse {
 	return employeeResponse{
 		ID:         employee.ID,
 		MerchantID: employee.MerchantID,
+		UserID:     employee.UserID,
 		Name:       employee.Name,
 		Phone:      employee.Phone,
 		Code:       employee.Code,
 		Status:     employee.Status,
 	}
+}
+
+func (h *Handler) UpdateEmployee(c *fiber.Ctx) error {
+	claims, ok := getClaims(c)
+	if !ok {
+		return h.respondError(c, fiber.StatusUnauthorized, "unauthorized")
+	}
+
+	employeeID, err := uuid.Parse(c.Params("id"))
+	if err != nil {
+		return h.respondError(c, fiber.StatusBadRequest, "invalid employee id")
+	}
+
+	var req updateEmployeeRequest
+	if err := h.parseBody(c, &req); err != nil {
+		return h.respondError(c, fiber.StatusBadRequest, "invalid request")
+	}
+
+	if strings.TrimSpace(req.Name) == "" && strings.TrimSpace(req.Status) == "" {
+		return h.respondError(c, fiber.StatusBadRequest, "missing updates")
+	}
+
+	ctx, cancel := h.requestContext()
+	defer cancel()
+
+	merchant, err := h.db.GetMerchantByOwner(ctx, claims.UserID)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return h.respondError(c, fiber.StatusNotFound, "merchant not found")
+		}
+		return h.respondError(c, fiber.StatusInternalServerError, "failed to load merchant")
+	}
+
+	updated, err := h.db.UpdateEmployee(ctx, db.UpdateEmployeeParams{
+		ID:         employeeID,
+		MerchantID: merchant.ID,
+		Column3:    req.Name,
+		Column4:    req.Status,
+	})
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return h.respondError(c, fiber.StatusNotFound, "employee not found")
+		}
+		return h.respondError(c, fiber.StatusInternalServerError, "failed to update employee")
+	}
+
+	return c.JSON(mapEmployee(updated))
+}
+
+func (h *Handler) DeleteEmployee(c *fiber.Ctx) error {
+	claims, ok := getClaims(c)
+	if !ok {
+		return h.respondError(c, fiber.StatusUnauthorized, "unauthorized")
+	}
+
+	employeeID, err := uuid.Parse(c.Params("id"))
+	if err != nil {
+		return h.respondError(c, fiber.StatusBadRequest, "invalid employee id")
+	}
+
+	ctx, cancel := h.requestContext()
+	defer cancel()
+
+	merchant, err := h.db.GetMerchantByOwner(ctx, claims.UserID)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return h.respondError(c, fiber.StatusNotFound, "merchant not found")
+		}
+		return h.respondError(c, fiber.StatusInternalServerError, "failed to load merchant")
+	}
+
+	employee, err := h.db.DeactivateEmployee(ctx, db.DeactivateEmployeeParams{
+		ID:         employeeID,
+		MerchantID: merchant.ID,
+	})
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return h.respondError(c, fiber.StatusNotFound, "employee not found")
+		}
+		return h.respondError(c, fiber.StatusInternalServerError, "failed to deactivate employee")
+	}
+
+	return c.JSON(mapEmployee(employee))
 }

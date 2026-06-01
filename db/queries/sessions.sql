@@ -21,19 +21,3 @@ WHERE id = $1;
 UPDATE sessions
 SET status = $2, distance_miles = $3, updated_at = now()
 WHERE id = $1;
-
--- name: GetLastCheckpoint :one
-SELECT id, session_id, lat, lng, recorded_at, steps, distance_meters, speed_mps, speed_violation
-FROM session_checkpoints
-WHERE session_id = $1
-ORDER BY recorded_at DESC
-LIMIT 1;
-
--- name: CreateCheckpoint :exec
-INSERT INTO session_checkpoints (session_id, lat, lng, recorded_at, steps, distance_meters, speed_mps, speed_violation)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8);
-
--- name: SumCheckpointDistanceMeters :one
-SELECT COALESCE(SUM(distance_meters), 0)::double precision
-FROM session_checkpoints
-WHERE session_id = $1;

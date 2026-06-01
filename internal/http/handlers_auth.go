@@ -1,26 +1,21 @@
 package http
 
 import (
-	"crypto/subtle"
-	"time"
+	"context"
+	"errors"
+	"strings"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	verify "github.com/twilio/twilio-go/rest/verify/v2"
 
 	"one-more-mile/server/internal/http/middleware"
 	db "one-more-mile/server/internal/sqlc"
-	"one-more-mile/server/internal/util"
 )
 
 type otpRequest struct {
 	Phone string `json:"phone" validate:"required"`
-}
-
-type otpResponse struct {
-	OTPID     uuid.UUID `json:"otp_id"`
-	ExpiresAt time.Time `json:"expires_at"`
-	DebugCode string    `json:"debug_code,omitempty"`
 }
 
 func (h *Handler) SendOTP(c *fiber.Ctx) error {
@@ -29,48 +24,23 @@ func (h *Handler) SendOTP(c *fiber.Ctx) error {
 		return h.respondError(c, fiber.StatusBadRequest, "invalid request")
 	}
 
-	code, err := util.RandomDigits(6)
-	if err != nil {
-		return h.respondError(c, fiber.StatusInternalServerError, "failed to generate otp")
+	if h.twilioEnabled() {
+		if err := h.sendTwilioOTP(req.Phone); err != nil {
+			return h.respondError(c, fiber.StatusBadRequest, "failed to send otp")
+		}
 	}
 
-	otpID := uuid.New()
-	expiresAt := time.Now().Add(5 * time.Minute)
-	codeHash := util.HashOTP(req.Phone, code)
-
-	ctx, cancel := h.requestContext()
-	defer cancel()
-
-	_, err = h.db.CreateOTP(ctx, db.CreateOTPParams{
-		ID:        otpID,
-		Phone:     req.Phone,
-		CodeHash:  codeHash,
-		ExpiresAt: toPgTimestamptz(expiresAt),
-	})
-	if err != nil {
-		return h.respondError(c, fiber.StatusInternalServerError, "failed to create otp")
-	}
-
-	resp := otpResponse{
-		OTPID:     otpID,
-		ExpiresAt: expiresAt,
-	}
-	if h.cfg.Env == "dev" {
-		resp.DebugCode = code
-	}
-
-	return c.JSON(resp)
+	return c.JSON(fiber.Map{"message": "success"})
 }
 
 type verifyOTPRequest struct {
-	OTPID uuid.UUID `json:"otp_id" validate:"required"`
-	Phone string    `json:"phone" validate:"required"`
-	Code  string    `json:"code" validate:"required"`
+	Phone string `json:"phone" validate:"required"`
+	Code  string `json:"code" validate:"required"`
 }
 
 type verifyOTPResponse struct {
-	Token string       `json:"token"`
 	User  userResponse `json:"user"`
+	Token string       `json:"token"`
 }
 
 func (h *Handler) VerifyOTP(c *fiber.Ctx) error {
@@ -82,38 +52,23 @@ func (h *Handler) VerifyOTP(c *fiber.Ctx) error {
 	ctx, cancel := h.requestContext()
 	defer cancel()
 
-	otp, err := h.db.GetOTPForVerify(ctx, db.GetOTPForVerifyParams{
-		ID:    req.OTPID,
-		Phone: req.Phone,
-	})
-	if err != nil {
-		if err == pgx.ErrNoRows {
+	if h.twilioEnabled() {
+		if err := h.verifyTwilioOTP(req.Phone, req.Code); err != nil {
 			return h.respondError(c, fiber.StatusUnauthorized, "invalid otp")
 		}
-		return h.respondError(c, fiber.StatusInternalServerError, "failed to load otp")
-	}
-
-	expiry := fromPgTimestamptz(otp.ExpiresAt)
-	if otp.UsedAt.Valid || !otp.ExpiresAt.Valid || time.Now().After(expiry) {
-		return h.respondError(c, fiber.StatusUnauthorized, "otp expired")
-	}
-
-	expected := util.HashOTP(req.Phone, req.Code)
-	if subtle.ConstantTimeCompare([]byte(expected), []byte(otp.CodeHash)) != 1 {
-		return h.respondError(c, fiber.StatusUnauthorized, "invalid otp")
-	}
-
-	if err := h.db.MarkOTPUsed(ctx, otp.ID); err != nil {
-		return h.respondError(c, fiber.StatusInternalServerError, "failed to update otp")
 	}
 
 	user, err := h.db.GetUserByPhone(ctx, req.Phone)
 	if err != nil {
 		if err == pgx.ErrNoRows {
+			userRole := db.UserRoleUser
+			if h.isEmployeePhone(ctx, req.Phone) {
+				userRole = db.UserRoleEmployee
+			}
 			user, err = h.db.CreateUser(ctx, db.CreateUserParams{
 				ID:    uuid.New(),
 				Phone: req.Phone,
-				Role:  "user",
+				Role:  userRole,
 			})
 			if err != nil {
 				return h.respondError(c, fiber.StatusInternalServerError, "failed to create user")
@@ -123,13 +78,74 @@ func (h *Handler) VerifyOTP(c *fiber.Ctx) error {
 		}
 	}
 
-	token, err := middleware.GenerateToken(h.cfg, user.ID, user.Role)
+	if h.isEmployeePhone(ctx, req.Phone) && user.Role != db.UserRoleEmployee {
+		if err := h.db.UpdateUserRole(ctx, db.UpdateUserRoleParams{
+			ID:   user.ID,
+			Role: db.UserRoleEmployee,
+		}); err != nil {
+			return h.respondError(c, fiber.StatusInternalServerError, "failed to update user role")
+		}
+		user.Role = db.UserRoleEmployee
+	}
+
+	token, err := middleware.GenerateToken(h.cfg, user.ID, string(user.Role))
 	if err != nil {
 		return h.respondError(c, fiber.StatusInternalServerError, "failed to issue token")
 	}
 
 	return c.JSON(verifyOTPResponse{
-		Token: token,
 		User:  mapUser(user),
+		Token: token,
 	})
+}
+
+func (h *Handler) isEmployeePhone(ctx context.Context, phone string) bool {
+	_, err := h.db.GetEmployeeByPhone(ctx, phone)
+	return err == nil
+}
+
+func (h *Handler) twilioEnabled() bool {
+	return h.twilioClient != nil && strings.TrimSpace(h.twilioVerifyServiceID) != ""
+}
+
+func (h *Handler) sendTwilioOTP(phone string) error {
+	params := &verify.CreateVerificationParams{}
+	params.SetTo(phone)
+	params.SetChannel("sms")
+
+	resp, err := h.twilioClient.VerifyV2.CreateVerification(h.twilioVerifyServiceID, params)
+	if err != nil {
+		return err
+	}
+	if resp == nil || resp.Status == nil {
+		return errors.New("twilio verification failed")
+	}
+
+	status := strings.ToLower(*resp.Status)
+	if status != "pending" && status != "approved" {
+		return errors.New("twilio verification failed")
+	}
+
+	return nil
+}
+
+func (h *Handler) verifyTwilioOTP(phone, code string) error {
+	params := &verify.CreateVerificationCheckParams{}
+	params.SetTo(phone)
+	params.SetCode(code)
+
+	resp, err := h.twilioClient.VerifyV2.CreateVerificationCheck(h.twilioVerifyServiceID, params)
+	if err != nil {
+		return err
+	}
+	if resp == nil || resp.Status == nil {
+		return errors.New("invalid otp")
+	}
+
+	status := strings.ToLower(*resp.Status)
+	if status != "approved" {
+		return errors.New("invalid otp")
+	}
+
+	return nil
 }

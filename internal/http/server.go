@@ -41,11 +41,13 @@ func NewServer(cfg config.Config, queries *db.Queries, pool *pgxpool.Pool) *fibe
 
 	users := protected.Group("/users")
 	users.Post("/profile", handler.UpdateProfile)
-	users.Get("/vouchers", handler.ListUserVouchers)
+	users.Get("/coupons", handler.ListUserCoupons)
+
+	uploads := protected.Group("/uploads")
+	uploads.Post("/presign", handler.PresignUpload)
 
 	sessions := protected.Group("/sessions")
 	sessions.Post("/start", handler.StartSession)
-	sessions.Post("/:id/checkpoints", handler.UploadCheckpoints)
 	sessions.Post("/stop", handler.StopSession)
 
 	challenges := protected.Group("/challenges")
@@ -59,9 +61,17 @@ func NewServer(cfg config.Config, queries *db.Queries, pool *pgxpool.Pool) *fibe
 	merchants.Get("/challenges", middleware.RequireRole("merchant", "admin"), handler.ListMerchantChallenges)
 	merchants.Get("/employees", middleware.RequireRole("merchant", "admin"), handler.ListEmployees)
 	merchants.Post("/employees", middleware.RequireRole("merchant", "admin"), handler.CreateEmployee)
+	merchants.Patch("/employees/:id", middleware.RequireRole("merchant", "admin"), handler.UpdateEmployee)
+	merchants.Delete("/employees/:id", middleware.RequireRole("merchant", "admin"), handler.DeleteEmployee)
 
-	vouchers := protected.Group("/vouchers")
-	vouchers.Post("/redeem", middleware.RequireRole("merchant", "admin"), handler.RedeemVoucher)
+	categories := protected.Group("/categories")
+	categories.Get("", handler.ListCategories)
+	categories.Post("", middleware.RequireRole("admin"), handler.CreateCategory)
+	categories.Patch("/:name", middleware.RequireRole("admin"), handler.UpdateCategory)
+	categories.Delete("/:name", middleware.RequireRole("admin"), handler.DeleteCategory)
+
+	coupons := protected.Group("/coupons")
+	coupons.Post("/redeem", middleware.RequireRole("employee"), handler.RedeemCoupon)
 
 	admin := protected.Group("/admin", middleware.RequireRole("admin"))
 	admin.Get("/stats", handler.AdminStats)

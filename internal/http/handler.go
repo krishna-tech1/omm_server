@@ -4,30 +4,44 @@ import (
 	"context"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/go-playground/validator/v10"
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/twilio/twilio-go"
 
 	"one-more-mile/server/internal/config"
 	"one-more-mile/server/internal/http/middleware"
+	"one-more-mile/server/internal/infra"
 	db "one-more-mile/server/internal/sqlc"
 )
 
 type Handler struct {
-	cfg      config.Config
-	db       *db.Queries
-	pool     *pgxpool.Pool
-	validate *validator.Validate
+	cfg                   config.Config
+	db                    *db.Queries
+	pool                  *pgxpool.Pool
+	validate              *validator.Validate
+	twilioClient          *twilio.RestClient
+	twilioVerifyServiceID string
+	r2Presigner           *s3.PresignClient
+	r2InitErr             error
 }
 
 func NewHandler(cfg config.Config, queries *db.Queries, pool *pgxpool.Pool) *Handler {
+	twilioClient := infra.NewTwilioClient(cfg.TwilioAccountSID, cfg.TwilioAuthToken)
+	presigner, presignErr := infra.NewR2PresignClient(context.Background(), cfg.R2AccessKeyID, cfg.R2SecretAccessKey, cfg.R2Endpoint, cfg.R2Region)
+
 	return &Handler{
-		cfg:      cfg,
-		db:       queries,
-		pool:     pool,
-		validate: validator.New(),
+		cfg:                   cfg,
+		db:                    queries,
+		pool:                  pool,
+		validate:              validator.New(),
+		twilioClient:          twilioClient,
+		twilioVerifyServiceID: cfg.TwilioVerifyServiceSID,
+		r2Presigner:           presigner,
+		r2InitErr:             presignErr,
 	}
 }
 

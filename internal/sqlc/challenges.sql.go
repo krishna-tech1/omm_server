@@ -70,6 +70,40 @@ func (q *Queries) GetChallengeByID(ctx context.Context, id uuid.UUID) (Challenge
 	return i, err
 }
 
+const listActiveChallengeIDsForUser = `-- name: ListActiveChallengeIDsForUser :many
+SELECT cr.challenge_id
+FROM challenge_registrations cr
+JOIN challenges c ON c.id = cr.challenge_id
+WHERE cr.user_id = $1
+    AND cr.status IN ('active', 'pending')
+    AND c.expires_at > $2
+`
+
+type ListActiveChallengeIDsForUserParams struct {
+	UserID    uuid.UUID          `json:"user_id"`
+	ExpiresAt pgtype.Timestamptz `json:"expires_at"`
+}
+
+func (q *Queries) ListActiveChallengeIDsForUser(ctx context.Context, arg ListActiveChallengeIDsForUserParams) ([]uuid.UUID, error) {
+	rows, err := q.db.Query(ctx, listActiveChallengeIDsForUser, arg.UserID, arg.ExpiresAt)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []uuid.UUID
+	for rows.Next() {
+		var challenge_id uuid.UUID
+		if err := rows.Scan(&challenge_id); err != nil {
+			return nil, err
+		}
+		items = append(items, challenge_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listActiveChallenges = `-- name: ListActiveChallenges :many
 SELECT id, merchant_id, title, description, target_miles, expires_at, created_at
 FROM challenges
@@ -156,6 +190,22 @@ func (q *Queries) ListMerchantChallengesWithCounts(ctx context.Context, merchant
 		return nil, err
 	}
 	return items, nil
+}
+
+const markChallengeRegistrationCompleted = `-- name: MarkChallengeRegistrationCompleted :exec
+UPDATE challenge_registrations
+SET status = 'completed'
+WHERE user_id = $1 AND challenge_id = $2
+`
+
+type MarkChallengeRegistrationCompletedParams struct {
+	UserID      uuid.UUID `json:"user_id"`
+	ChallengeID uuid.UUID `json:"challenge_id"`
+}
+
+func (q *Queries) MarkChallengeRegistrationCompleted(ctx context.Context, arg MarkChallengeRegistrationCompletedParams) error {
+	_, err := q.db.Exec(ctx, markChallengeRegistrationCompleted, arg.UserID, arg.ChallengeID)
+	return err
 }
 
 const registerChallenge = `-- name: RegisterChallenge :one

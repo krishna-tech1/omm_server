@@ -12,14 +12,15 @@ import (
 )
 
 const createEmployee = `-- name: CreateEmployee :one
-INSERT INTO employees (id, merchant_id, name, phone, code, status)
-VALUES ($1, $2, $3, $4, $5, $6)
-RETURNING id, merchant_id, name, phone, code, status, created_at
+INSERT INTO employees (id, merchant_id, user_id, name, phone, code, status)
+VALUES ($1, $2, $3, $4, $5, $6, $7)
+RETURNING id, merchant_id, user_id, name, phone, code, status, created_at
 `
 
 type CreateEmployeeParams struct {
 	ID         uuid.UUID `json:"id"`
 	MerchantID uuid.UUID `json:"merchant_id"`
+	UserID     uuid.UUID `json:"user_id"`
 	Name       string    `json:"name"`
 	Phone      string    `json:"phone"`
 	Code       string    `json:"code"`
@@ -30,6 +31,7 @@ func (q *Queries) CreateEmployee(ctx context.Context, arg CreateEmployeeParams) 
 	row := q.db.QueryRow(ctx, createEmployee,
 		arg.ID,
 		arg.MerchantID,
+		arg.UserID,
 		arg.Name,
 		arg.Phone,
 		arg.Code,
@@ -39,6 +41,7 @@ func (q *Queries) CreateEmployee(ctx context.Context, arg CreateEmployeeParams) 
 	err := row.Scan(
 		&i.ID,
 		&i.MerchantID,
+		&i.UserID,
 		&i.Name,
 		&i.Phone,
 		&i.Code,
@@ -91,8 +94,36 @@ func (q *Queries) CreateMerchant(ctx context.Context, arg CreateMerchantParams) 
 	return i, err
 }
 
+const deactivateEmployee = `-- name: DeactivateEmployee :one
+UPDATE employees
+SET status = 'inactive'
+WHERE id = $1 AND merchant_id = $2
+RETURNING id, merchant_id, user_id, name, phone, code, status, created_at
+`
+
+type DeactivateEmployeeParams struct {
+	ID         uuid.UUID `json:"id"`
+	MerchantID uuid.UUID `json:"merchant_id"`
+}
+
+func (q *Queries) DeactivateEmployee(ctx context.Context, arg DeactivateEmployeeParams) (Employee, error) {
+	row := q.db.QueryRow(ctx, deactivateEmployee, arg.ID, arg.MerchantID)
+	var i Employee
+	err := row.Scan(
+		&i.ID,
+		&i.MerchantID,
+		&i.UserID,
+		&i.Name,
+		&i.Phone,
+		&i.Code,
+		&i.Status,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const getEmployeeByCode = `-- name: GetEmployeeByCode :one
-SELECT id, merchant_id, name, phone, code, status, created_at
+SELECT id, merchant_id, user_id, name, phone, code, status, created_at
 FROM employees
 WHERE merchant_id = $1 AND code = $2
 `
@@ -108,6 +139,51 @@ func (q *Queries) GetEmployeeByCode(ctx context.Context, arg GetEmployeeByCodePa
 	err := row.Scan(
 		&i.ID,
 		&i.MerchantID,
+		&i.UserID,
+		&i.Name,
+		&i.Phone,
+		&i.Code,
+		&i.Status,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const getEmployeeByPhone = `-- name: GetEmployeeByPhone :one
+SELECT id, merchant_id, user_id, name, phone, code, status, created_at
+FROM employees
+WHERE phone = $1
+`
+
+func (q *Queries) GetEmployeeByPhone(ctx context.Context, phone string) (Employee, error) {
+	row := q.db.QueryRow(ctx, getEmployeeByPhone, phone)
+	var i Employee
+	err := row.Scan(
+		&i.ID,
+		&i.MerchantID,
+		&i.UserID,
+		&i.Name,
+		&i.Phone,
+		&i.Code,
+		&i.Status,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const getEmployeeByUserID = `-- name: GetEmployeeByUserID :one
+SELECT id, merchant_id, user_id, name, phone, code, status, created_at
+FROM employees
+WHERE user_id = $1
+`
+
+func (q *Queries) GetEmployeeByUserID(ctx context.Context, userID uuid.UUID) (Employee, error) {
+	row := q.db.QueryRow(ctx, getEmployeeByUserID, userID)
+	var i Employee
+	err := row.Scan(
+		&i.ID,
+		&i.MerchantID,
+		&i.UserID,
 		&i.Name,
 		&i.Phone,
 		&i.Code,
@@ -140,7 +216,7 @@ func (q *Queries) GetMerchantByOwner(ctx context.Context, ownerUserID uuid.UUID)
 }
 
 const listEmployeesByMerchant = `-- name: ListEmployeesByMerchant :many
-SELECT id, merchant_id, name, phone, code, status, created_at
+SELECT id, merchant_id, user_id, name, phone, code, status, created_at
 FROM employees
 WHERE merchant_id = $1
 ORDER BY created_at DESC
@@ -158,6 +234,7 @@ func (q *Queries) ListEmployeesByMerchant(ctx context.Context, merchantID uuid.U
 		if err := rows.Scan(
 			&i.ID,
 			&i.MerchantID,
+			&i.UserID,
 			&i.Name,
 			&i.Phone,
 			&i.Code,
@@ -177,9 +254,9 @@ func (q *Queries) ListEmployeesByMerchant(ctx context.Context, merchantID uuid.U
 const merchantDashboardStats = `-- name: MerchantDashboardStats :one
 SELECT
     (SELECT COUNT(*) FROM challenges c WHERE c.merchant_id = $1) AS total_challenges,
-    (SELECT COUNT(*) FROM voucher_redemptions vr
-     JOIN vouchers v ON v.id = vr.voucher_id
-     JOIN challenges c ON c.id = v.challenge_id
+    (SELECT COUNT(*) FROM coupon_redemptions cr
+     JOIN coupons cpn ON cpn.id = cr.coupon_id
+     JOIN challenges c ON c.id = cpn.challenge_id
      WHERE c.merchant_id = $1) AS total_redemptions,
     (SELECT COUNT(DISTINCT cr.user_id)
      FROM challenge_registrations cr
@@ -197,5 +274,41 @@ func (q *Queries) MerchantDashboardStats(ctx context.Context, merchantID uuid.UU
 	row := q.db.QueryRow(ctx, merchantDashboardStats, merchantID)
 	var i MerchantDashboardStatsRow
 	err := row.Scan(&i.TotalChallenges, &i.TotalRedemptions, &i.ActiveCustomers)
+	return i, err
+}
+
+const updateEmployee = `-- name: UpdateEmployee :one
+UPDATE employees
+SET name = COALESCE(NULLIF($3, ''), name),
+    status = COALESCE(NULLIF($4, ''), status)
+WHERE id = $1 AND merchant_id = $2
+RETURNING id, merchant_id, user_id, name, phone, code, status, created_at
+`
+
+type UpdateEmployeeParams struct {
+	ID         uuid.UUID   `json:"id"`
+	MerchantID uuid.UUID   `json:"merchant_id"`
+	Column3    interface{} `json:"column_3"`
+	Column4    interface{} `json:"column_4"`
+}
+
+func (q *Queries) UpdateEmployee(ctx context.Context, arg UpdateEmployeeParams) (Employee, error) {
+	row := q.db.QueryRow(ctx, updateEmployee,
+		arg.ID,
+		arg.MerchantID,
+		arg.Column3,
+		arg.Column4,
+	)
+	var i Employee
+	err := row.Scan(
+		&i.ID,
+		&i.MerchantID,
+		&i.UserID,
+		&i.Name,
+		&i.Phone,
+		&i.Code,
+		&i.Status,
+		&i.CreatedAt,
+	)
 	return i, err
 }
