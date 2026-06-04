@@ -1,6 +1,7 @@
 DROP TABLE IF EXISTS coupon_redemptions;
 DROP TABLE IF EXISTS coupons;
 DROP TABLE IF EXISTS employees;
+DROP TABLE IF EXISTS session_checkpoints;
 DROP TABLE IF EXISTS sessions;
 DROP TABLE IF EXISTS challenge_registrations;
 DROP TABLE IF EXISTS challenges;

@@ -33,6 +33,11 @@ UPDATE challenge_registrations
 SET status = 'completed'
 WHERE user_id = $1 AND challenge_id = $2;
 
+-- name: MarkChallengeRegistrationCompletedIfActive :exec
+UPDATE challenge_registrations
+SET status = 'completed'
+WHERE user_id = $1 AND challenge_id = $2 AND status <> 'completed';
+
 -- name: ListMerchantChallengesWithCounts :many
 SELECT c.id, c.merchant_id, c.title, c.description, c.target_miles, c.expires_at, c.created_at,
        COALESCE(r.participants, 0) AS participants

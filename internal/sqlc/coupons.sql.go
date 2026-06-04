@@ -51,6 +51,47 @@ func (q *Queries) CreateCoupon(ctx context.Context, arg CreateCouponParams) (Cou
 	return i, err
 }
 
+const createCouponIfNotExists = `-- name: CreateCouponIfNotExists :one
+INSERT INTO coupons (id, user_id, challenge_id, session_id, code, status)
+VALUES ($1, $2, $3, $4, $5, $6)
+ON CONFLICT (user_id, challenge_id) DO UPDATE
+SET issued_at = coupons.issued_at
+RETURNING id, user_id, challenge_id, session_id, code, status, issued_at, redeemed_at, redeemed_by_employee_id
+`
+
+type CreateCouponIfNotExistsParams struct {
+	ID          uuid.UUID `json:"id"`
+	UserID      uuid.UUID `json:"user_id"`
+	ChallengeID uuid.UUID `json:"challenge_id"`
+	SessionID   uuid.UUID `json:"session_id"`
+	Code        string    `json:"code"`
+	Status      string    `json:"status"`
+}
+
+func (q *Queries) CreateCouponIfNotExists(ctx context.Context, arg CreateCouponIfNotExistsParams) (Coupon, error) {
+	row := q.db.QueryRow(ctx, createCouponIfNotExists,
+		arg.ID,
+		arg.UserID,
+		arg.ChallengeID,
+		arg.SessionID,
+		arg.Code,
+		arg.Status,
+	)
+	var i Coupon
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.ChallengeID,
+		&i.SessionID,
+		&i.Code,
+		&i.Status,
+		&i.IssuedAt,
+		&i.RedeemedAt,
+		&i.RedeemedByEmployeeID,
+	)
+	return i, err
+}
+
 const createCouponRedemption = `-- name: CreateCouponRedemption :one
 INSERT INTO coupon_redemptions (id, coupon_id, employee_id)
 VALUES ($1, $2, $3)
@@ -71,6 +112,34 @@ func (q *Queries) CreateCouponRedemption(ctx context.Context, arg CreateCouponRe
 		&i.CouponID,
 		&i.EmployeeID,
 		&i.RedeemedAt,
+	)
+	return i, err
+}
+
+const getCouponByUserChallenge = `-- name: GetCouponByUserChallenge :one
+SELECT id, user_id, challenge_id, session_id, code, status, issued_at, redeemed_at, redeemed_by_employee_id
+FROM coupons
+WHERE user_id = $1 AND challenge_id = $2
+`
+
+type GetCouponByUserChallengeParams struct {
+	UserID      uuid.UUID `json:"user_id"`
+	ChallengeID uuid.UUID `json:"challenge_id"`
+}
+
+func (q *Queries) GetCouponByUserChallenge(ctx context.Context, arg GetCouponByUserChallengeParams) (Coupon, error) {
+	row := q.db.QueryRow(ctx, getCouponByUserChallenge, arg.UserID, arg.ChallengeID)
+	var i Coupon
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.ChallengeID,
+		&i.SessionID,
+		&i.Code,
+		&i.Status,
+		&i.IssuedAt,
+		&i.RedeemedAt,
+		&i.RedeemedByEmployeeID,
 	)
 	return i, err
 }

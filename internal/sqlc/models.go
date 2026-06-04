@@ -142,6 +142,19 @@ type Session struct {
 	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
 }
 
+type SessionCheckpoint struct {
+	ID             uuid.UUID          `json:"id"`
+	SessionID      uuid.UUID          `json:"session_id"`
+	Lat            float64            `json:"lat"`
+	Lng            float64            `json:"lng"`
+	RecordedAt     pgtype.Timestamptz `json:"recorded_at"`
+	Steps          int32              `json:"steps"`
+	DistanceMeters float64            `json:"distance_meters"`
+	SpeedMps       float64            `json:"speed_mps"`
+	SpeedViolation bool               `json:"speed_violation"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+}
+
 type User struct {
 	ID        uuid.UUID          `json:"id"`
 	Phone     string             `json:"phone"`

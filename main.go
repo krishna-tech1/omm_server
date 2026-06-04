@@ -26,8 +26,14 @@ func main() {
 	}
 	defer pool.Close()
 
+	redisClient, err := infra.NewRedisClient(ctx, cfg)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer redisClient.Close()
+
 	queries := db.New(pool)
-	app := http.NewServer(cfg, queries, pool)
+	app := http.NewServer(cfg, queries, pool, redisClient)
 
 	go func() {
 		if err := app.Listen(":" + cfg.Port); err != nil {

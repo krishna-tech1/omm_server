@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/redis/go-redis/v9"
 	"github.com/twilio/twilio-go"
 
 	"one-more-mile/server/internal/config"
@@ -22,6 +23,7 @@ type Handler struct {
 	cfg                   config.Config
 	db                    *db.Queries
 	pool                  *pgxpool.Pool
+	redis                 *redis.Client
 	validate              *validator.Validate
 	twilioClient          *twilio.RestClient
 	twilioVerifyServiceID string
@@ -29,7 +31,7 @@ type Handler struct {
 	r2InitErr             error
 }
 
-func NewHandler(cfg config.Config, queries *db.Queries, pool *pgxpool.Pool) *Handler {
+func NewHandler(cfg config.Config, queries *db.Queries, pool *pgxpool.Pool, redisClient *redis.Client) *Handler {
 	twilioClient := infra.NewTwilioClient(cfg.TwilioAccountSID, cfg.TwilioAuthToken)
 	presigner, presignErr := infra.NewR2PresignClient(context.Background(), cfg.R2AccessKeyID, cfg.R2SecretAccessKey, cfg.R2Endpoint, cfg.R2Region)
 
@@ -37,6 +39,7 @@ func NewHandler(cfg config.Config, queries *db.Queries, pool *pgxpool.Pool) *Han
 		cfg:                   cfg,
 		db:                    queries,
 		pool:                  pool,
+		redis:                 redisClient,
 		validate:              validator.New(),
 		twilioClient:          twilioClient,
 		twilioVerifyServiceID: cfg.TwilioVerifyServiceSID,

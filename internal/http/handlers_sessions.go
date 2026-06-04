@@ -1,6 +1,7 @@
 package http
 
 import (
+	"context"
 	"sort"
 	"time"
 
@@ -160,6 +161,7 @@ type stopSessionRequest struct {
 	EndTime    time.Time   `json:"end_time" validate:"required"`
 	EndLat     float64     `json:"end_lat" validate:"required"`
 	EndLng     float64     `json:"end_lng" validate:"required"`
+	StepsEnd   int32       `json:"steps_end"`
 	TotalMiles float64     `json:"total_miles" validate:"required"`
 }
 
@@ -220,7 +222,7 @@ func (h *Handler) StopSession(c *fiber.Ctx) error {
 			}
 			return h.respondError(c, fiber.StatusInternalServerError, "failed to load session")
 		}
-		if session.Status != "active" {
+		if session.Status != "active" && session.Status != "completed" {
 			return h.respondError(c, fiber.StatusBadRequest, "session is not active")
 		}
 		sessions = append(sessions, session)
@@ -238,14 +240,59 @@ func (h *Handler) StopSession(c *fiber.Ctx) error {
 		Sessions: make([]stopSessionResult, 0, len(sessions)),
 	}
 
+	streamCleanupIDs := make([]uuid.UUID, 0, len(sessions))
 	for _, session := range sessions {
+		distanceMiles := req.TotalMiles
+		endLat := req.EndLat
+		endLng := req.EndLng
+		stepsEnd := req.StepsEnd
+		milesEnd := req.TotalMiles
+
+		streamState, hasStreamState, err := h.loadSessionStreamState(ctx, session.ID)
+		if err != nil {
+			return h.respondError(c, fiber.StatusInternalServerError, "failed to load session stream")
+		}
+		if hasStreamState && streamState.Initialized {
+			distanceMiles = streamState.DistanceMiles
+			endLat = streamState.LastLat
+			endLng = streamState.LastLng
+			stepsEnd = streamState.StepsLast
+			milesEnd = session.MilesStart + streamState.DistanceMiles
+			streamCleanupIDs = append(streamCleanupIDs, session.ID)
+		}
+
+		if distanceMiles < 0 {
+			return h.respondError(c, fiber.StatusBadRequest, "invalid total miles")
+		}
+
+		if session.Status == "completed" {
+			result := stopSessionResult{
+				SessionID:     session.ID,
+				ChallengeID:   session.ChallengeID,
+				Status:        "completed",
+				DistanceMiles: session.DistanceMiles,
+			}
+			coupon, err := queries.GetCouponByUserChallenge(ctx, db.GetCouponByUserChallengeParams{
+				UserID:      claims.UserID,
+				ChallengeID: session.ChallengeID,
+			})
+			if err == nil {
+				result.CouponCode = coupon.Code
+				result.CouponStatus = coupon.Status
+			} else if err != pgx.ErrNoRows {
+				return h.respondError(c, fiber.StatusInternalServerError, "failed to load coupon")
+			}
+			response.Sessions = append(response.Sessions, result)
+			continue
+		}
+
 		if err := queries.UpdateSessionEnd(ctx, db.UpdateSessionEndParams{
 			ID:       session.ID,
 			EndTime:  toPgTimestamptz(req.EndTime),
-			EndLat:   req.EndLat,
-			EndLng:   req.EndLng,
-			StepsEnd: 0,
-			MilesEnd: req.TotalMiles,
+			EndLat:   endLat,
+			EndLng:   endLng,
+			StepsEnd: stepsEnd,
+			MilesEnd: milesEnd,
 		}); err != nil {
 			return h.respondError(c, fiber.StatusInternalServerError, "failed to update session")
 		}
@@ -253,7 +300,7 @@ func (h *Handler) StopSession(c *fiber.Ctx) error {
 		if err := queries.UpdateSessionStatusAndDistance(ctx, db.UpdateSessionStatusAndDistanceParams{
 			ID:            session.ID,
 			Status:        "completed",
-			DistanceMiles: req.TotalMiles,
+			DistanceMiles: distanceMiles,
 		}); err != nil {
 			return h.respondError(c, fiber.StatusInternalServerError, "failed to finalize session")
 		}
@@ -262,16 +309,16 @@ func (h *Handler) StopSession(c *fiber.Ctx) error {
 			SessionID:     session.ID,
 			ChallengeID:   session.ChallengeID,
 			Status:        "completed",
-			DistanceMiles: req.TotalMiles,
+			DistanceMiles: distanceMiles,
 		}
 
-		if targetMiles, ok := challengeTargets[session.ChallengeID]; ok && req.TotalMiles >= targetMiles {
+		if targetMiles, ok := challengeTargets[session.ChallengeID]; ok && distanceMiles >= targetMiles {
 			code, err := util.RandomCouponCode(10)
 			if err != nil {
 				return h.respondError(c, fiber.StatusInternalServerError, "failed to issue coupon")
 			}
 
-			coupon, err := queries.CreateCoupon(ctx, db.CreateCouponParams{
+			coupon, err := queries.CreateCouponIfNotExists(ctx, db.CreateCouponIfNotExistsParams{
 				ID:          uuid.New(),
 				UserID:      claims.UserID,
 				ChallengeID: session.ChallengeID,
@@ -283,7 +330,7 @@ func (h *Handler) StopSession(c *fiber.Ctx) error {
 				return h.respondError(c, fiber.StatusInternalServerError, "failed to issue coupon")
 			}
 
-			if err := queries.MarkChallengeRegistrationCompleted(ctx, db.MarkChallengeRegistrationCompletedParams{
+			if err := queries.MarkChallengeRegistrationCompletedIfActive(ctx, db.MarkChallengeRegistrationCompletedIfActiveParams{
 				UserID:      claims.UserID,
 				ChallengeID: session.ChallengeID,
 			}); err != nil {
@@ -299,6 +346,10 @@ func (h *Handler) StopSession(c *fiber.Ctx) error {
 
 	if err := tx.Commit(ctx); err != nil {
 		return h.respondError(c, fiber.StatusInternalServerError, "failed to commit session")
+	}
+
+	for _, sessionID := range streamCleanupIDs {
+		h.cleanupSessionStream(context.Background(), sessionID)
 	}
 
 	return c.JSON(response)

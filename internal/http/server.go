@@ -3,17 +3,19 @@ package http
 import (
 	"time"
 
+	"github.com/gofiber/contrib/websocket"
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/logger"
 	"github.com/gofiber/fiber/v2/middleware/recover"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/redis/go-redis/v9"
 
 	"one-more-mile/server/internal/config"
 	"one-more-mile/server/internal/http/middleware"
 	db "one-more-mile/server/internal/sqlc"
 )
 
-func NewServer(cfg config.Config, queries *db.Queries, pool *pgxpool.Pool) *fiber.App {
+func NewServer(cfg config.Config, queries *db.Queries, pool *pgxpool.Pool, redisClient *redis.Client) *fiber.App {
 	app := fiber.New(fiber.Config{
 		AppName:      "omm-server",
 		ReadTimeout:  10 * time.Second,
@@ -25,13 +27,18 @@ func NewServer(cfg config.Config, queries *db.Queries, pool *pgxpool.Pool) *fibe
 		app.Use(logger.New())
 	}
 
-	handler := NewHandler(cfg, queries, pool)
+	handler := NewHandler(cfg, queries, pool, redisClient)
 
 	app.Get("/health", func(c *fiber.Ctx) error {
 		return c.SendStatus(fiber.StatusOK)
 	})
 
 	api := app.Group("/api")
+	api.Get("/sessions/:id/stream", handler.AuthWebSocket, websocket.New(handler.StreamSession, websocket.Config{
+		HandshakeTimeout: 5 * time.Second,
+		ReadBufferSize:   2048,
+		WriteBufferSize:  2048,
+	}))
 
 	auth := api.Group("/auth")
 	auth.Post("/otp", handler.SendOTP)

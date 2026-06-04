@@ -10,6 +10,10 @@ components:
       type: http
       scheme: bearer
       bearerFormat: JWT
+    websocketToken:
+      type: apiKey
+      in: query
+      name: token
   schemas:
     ErrorResponse:
       type: object
@@ -150,6 +154,7 @@ components:
           format: uuid
         hmac_secret:
           type: string
+          description: Secret used to HMAC-sign websocket GPS+steps points.
         status:
           type: string
         start_time:
@@ -178,8 +183,12 @@ components:
           type: number
         end_lng:
           type: number
+        steps_end:
+          type: integer
+          format: int32
         total_miles:
           type: number
+          description: Fallback client-reported miles. If Redis stream state exists, server-computed websocket distance is used instead.
     StopSessionResult:
       type: object
       properties:
@@ -204,6 +213,83 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/StopSessionResult"
+    SessionStreamPoint:
+      type: object
+      required: [lat, lng, timestamp, seq, signature]
+      description: Client-to-server websocket message. Signature payload is `session_id|timestamp_utc_rfc3339nano|lat_7dp|lng_7dp|seq|steps`, HMAC-SHA256 hex signed with the session `hmac_secret`.
+      properties:
+        lat:
+          type: number
+          minimum: -90
+          maximum: 90
+        lng:
+          type: number
+          minimum: -180
+          maximum: 180
+        timestamp:
+          type: string
+          format: date-time
+        seq:
+          type: integer
+          format: int64
+          minimum: 1
+          description: Strictly increasing client sequence number.
+        steps:
+          type: integer
+          format: int32
+          minimum: 0
+          description: Cumulative device step count for the session; must be non-decreasing.
+        signature:
+          type: string
+          description: Lowercase hex HMAC-SHA256 signature for this point.
+    SessionStreamProgress:
+      type: object
+      description: Server-to-client websocket progress message.
+      properties:
+        type:
+          type: string
+          enum: [progress]
+        session_id:
+          type: string
+          format: uuid
+        challenge_id:
+          type: string
+          format: uuid
+        distance_miles:
+          type: number
+        target_miles:
+          type: number
+        steps:
+          type: integer
+          format: int32
+        seq:
+          type: integer
+          format: int64
+        completed:
+          type: boolean
+    SessionStreamChallengeCompleted:
+      allOf:
+        - $ref: "#/components/schemas/SessionStreamProgress"
+        - type: object
+          properties:
+            type:
+              type: string
+              enum: [challenge_completed]
+            message:
+              type: string
+              example: "challenge #c4a11e4e-0000-0000-0000-000000000001 complete!"
+            coupon_code:
+              type: string
+            coupon_status:
+              type: string
+    SessionStreamError:
+      type: object
+      properties:
+        type:
+          type: string
+          enum: [error]
+        message:
+          type: string
     PresignUploadRequest:
       type: object
       required: [purpose, content_type]
@@ -538,6 +624,40 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/StopSessionResponse"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /sessions/{id}/stream:
+    get:
+      summary: Stream GPS and steps for an active session
+      operationId: streamSession
+      description: |
+        WebSocket endpoint. Authenticate with `Authorization: Bearer <jwt>` for native clients, or `?token=<jwt>` for browser clients.
+
+        Clients send `SessionStreamPoint` JSON messages. The server validates ownership, HMAC signatures, monotonic sequence/timestamps, GPS speed, and step rate. Live distance/step state is cached in Redis to avoid per-point session/challenge DB reads. When target miles are reached before session stop, the server sends a `challenge_completed` message and issues the coupon idempotently.
+      x-websocket: true
+      security:
+        - bearerAuth: []
+        - websocketToken: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: token
+          in: query
+          required: false
+          schema:
+            type: string
+          description: JWT token for browser websocket handshakes when Authorization headers are unavailable.
+      responses:
+        "101":
+          description: WebSocket upgrade accepted. Messages are JSON objects matching SessionStreamProgress, SessionStreamChallengeCompleted, or SessionStreamError.
         "401":
           description: Unauthorized
           content:

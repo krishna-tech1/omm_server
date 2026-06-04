@@ -69,6 +69,117 @@ func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) (S
 	return i, err
 }
 
+const createSessionCheckpoint = `-- name: CreateSessionCheckpoint :one
+INSERT INTO session_checkpoints (session_id, lat, lng, recorded_at, steps, distance_meters, speed_mps, speed_violation)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+ON CONFLICT (session_id, recorded_at) DO UPDATE
+SET lat = EXCLUDED.lat,
+    lng = EXCLUDED.lng,
+    steps = EXCLUDED.steps,
+    distance_meters = EXCLUDED.distance_meters,
+    speed_mps = EXCLUDED.speed_mps,
+    speed_violation = EXCLUDED.speed_violation
+RETURNING id, session_id, lat, lng, recorded_at, steps, distance_meters, speed_mps, speed_violation, created_at
+`
+
+type CreateSessionCheckpointParams struct {
+	SessionID      uuid.UUID          `json:"session_id"`
+	Lat            float64            `json:"lat"`
+	Lng            float64            `json:"lng"`
+	RecordedAt     pgtype.Timestamptz `json:"recorded_at"`
+	Steps          int32              `json:"steps"`
+	DistanceMeters float64            `json:"distance_meters"`
+	SpeedMps       float64            `json:"speed_mps"`
+	SpeedViolation bool               `json:"speed_violation"`
+}
+
+func (q *Queries) CreateSessionCheckpoint(ctx context.Context, arg CreateSessionCheckpointParams) (SessionCheckpoint, error) {
+	row := q.db.QueryRow(ctx, createSessionCheckpoint,
+		arg.SessionID,
+		arg.Lat,
+		arg.Lng,
+		arg.RecordedAt,
+		arg.Steps,
+		arg.DistanceMeters,
+		arg.SpeedMps,
+		arg.SpeedViolation,
+	)
+	var i SessionCheckpoint
+	err := row.Scan(
+		&i.ID,
+		&i.SessionID,
+		&i.Lat,
+		&i.Lng,
+		&i.RecordedAt,
+		&i.Steps,
+		&i.DistanceMeters,
+		&i.SpeedMps,
+		&i.SpeedViolation,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const getActiveSessionStreamMeta = `-- name: GetActiveSessionStreamMeta :one
+SELECT s.id, s.user_id, s.challenge_id, s.start_time, s.start_lat, s.start_lng,
+       s.steps_start, s.miles_start, s.distance_miles, s.status, s.hmac_secret,
+       c.title AS challenge_title, c.target_miles, c.expires_at,
+       cr.status AS registration_status
+FROM sessions s
+JOIN challenges c ON c.id = s.challenge_id
+JOIN challenge_registrations cr ON cr.challenge_id = s.challenge_id AND cr.user_id = s.user_id
+WHERE s.id = $1
+  AND s.user_id = $2
+  AND s.status = 'active'
+  AND c.expires_at > now()
+`
+
+type GetActiveSessionStreamMetaParams struct {
+	ID     uuid.UUID `json:"id"`
+	UserID uuid.UUID `json:"user_id"`
+}
+
+type GetActiveSessionStreamMetaRow struct {
+	ID                 uuid.UUID          `json:"id"`
+	UserID             uuid.UUID          `json:"user_id"`
+	ChallengeID        uuid.UUID          `json:"challenge_id"`
+	StartTime          pgtype.Timestamptz `json:"start_time"`
+	StartLat           float64            `json:"start_lat"`
+	StartLng           float64            `json:"start_lng"`
+	StepsStart         int32              `json:"steps_start"`
+	MilesStart         float64            `json:"miles_start"`
+	DistanceMiles      float64            `json:"distance_miles"`
+	Status             string             `json:"status"`
+	HmacSecret         string             `json:"hmac_secret"`
+	ChallengeTitle     string             `json:"challenge_title"`
+	TargetMiles        float64            `json:"target_miles"`
+	ExpiresAt          pgtype.Timestamptz `json:"expires_at"`
+	RegistrationStatus string             `json:"registration_status"`
+}
+
+func (q *Queries) GetActiveSessionStreamMeta(ctx context.Context, arg GetActiveSessionStreamMetaParams) (GetActiveSessionStreamMetaRow, error) {
+	row := q.db.QueryRow(ctx, getActiveSessionStreamMeta, arg.ID, arg.UserID)
+	var i GetActiveSessionStreamMetaRow
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.ChallengeID,
+		&i.StartTime,
+		&i.StartLat,
+		&i.StartLng,
+		&i.StepsStart,
+		&i.MilesStart,
+		&i.DistanceMiles,
+		&i.Status,
+		&i.HmacSecret,
+		&i.ChallengeTitle,
+		&i.TargetMiles,
+		&i.ExpiresAt,
+		&i.RegistrationStatus,
+	)
+	return i, err
+}
+
 const getSessionByID = `-- name: GetSessionByID :one
 SELECT id, user_id, challenge_id, start_time, end_time, start_lat, start_lng, end_lat, end_lng, steps_start, steps_end, miles_start, miles_end, distance_miles, status, hmac_secret, created_at, updated_at FROM sessions
 WHERE id = $1
@@ -160,6 +271,22 @@ func (q *Queries) UpdateSessionEnd(ctx context.Context, arg UpdateSessionEndPara
 		arg.StepsEnd,
 		arg.MilesEnd,
 	)
+	return err
+}
+
+const updateSessionProgress = `-- name: UpdateSessionProgress :exec
+UPDATE sessions
+SET distance_miles = GREATEST(distance_miles, $2), updated_at = now()
+WHERE id = $1
+`
+
+type UpdateSessionProgressParams struct {
+	ID            uuid.UUID `json:"id"`
+	DistanceMiles float64   `json:"distance_miles"`
+}
+
+func (q *Queries) UpdateSessionProgress(ctx context.Context, arg UpdateSessionProgressParams) error {
+	_, err := q.db.Exec(ctx, updateSessionProgress, arg.ID, arg.DistanceMiles)
 	return err
 }
 

@@ -208,6 +208,22 @@ func (q *Queries) MarkChallengeRegistrationCompleted(ctx context.Context, arg Ma
 	return err
 }
 
+const markChallengeRegistrationCompletedIfActive = `-- name: MarkChallengeRegistrationCompletedIfActive :exec
+UPDATE challenge_registrations
+SET status = 'completed'
+WHERE user_id = $1 AND challenge_id = $2 AND status <> 'completed'
+`
+
+type MarkChallengeRegistrationCompletedIfActiveParams struct {
+	UserID      uuid.UUID `json:"user_id"`
+	ChallengeID uuid.UUID `json:"challenge_id"`
+}
+
+func (q *Queries) MarkChallengeRegistrationCompletedIfActive(ctx context.Context, arg MarkChallengeRegistrationCompletedIfActiveParams) error {
+	_, err := q.db.Exec(ctx, markChallengeRegistrationCompletedIfActive, arg.UserID, arg.ChallengeID)
+	return err
+}
+
 const registerChallenge = `-- name: RegisterChallenge :one
 INSERT INTO challenge_registrations (id, challenge_id, user_id)
 VALUES ($1, $2, $3)

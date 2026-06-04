@@ -15,6 +15,14 @@ type Config struct {
 	DatabaseURL            string
 	JWTSecret              string
 	TokenTTL               time.Duration
+	RedisAddr              string
+	RedisPassword          string
+	RedisDB                int
+	SessionStreamTTL       time.Duration
+	MaxGPSPointAge         time.Duration
+	MaxGPSPointFutureSkew  time.Duration
+	MaxGPSSpeedMPH         float64
+	MaxStepsPerMinute      float64
 	TwilioAccountSID       string
 	TwilioAuthToken        string
 	TwilioVerifyServiceSID string
@@ -34,6 +42,8 @@ func Load() (Config, error) {
 		Port:                   getEnv("PORT", "8080"),
 		DatabaseURL:            os.Getenv("DATABASE_URL"),
 		JWTSecret:              os.Getenv("JWT_SECRET"),
+		RedisAddr:              getEnv("REDIS_ADDR", "localhost:6379"),
+		RedisPassword:          os.Getenv("REDIS_PASSWORD"),
 		TwilioAccountSID:       os.Getenv("TWILIO_ACCOUNT_SID"),
 		TwilioAuthToken:        os.Getenv("TWILIO_AUTH_TOKEN"),
 		TwilioVerifyServiceSID: os.Getenv("TWILIO_VERIFY_SERVICE_SID"),
@@ -45,6 +55,12 @@ func Load() (Config, error) {
 		R2Region:               getEnv("R2_REGION", "auto"),
 	}
 
+	redisDB, err := strconv.Atoi(getEnv("REDIS_DB", "0"))
+	if err != nil {
+		return Config{}, err
+	}
+	cfg.RedisDB = redisDB
+
 	ttlMinutes := getEnv("TOKEN_TTL_MINUTES", "43200")
 	minutes, err := strconv.Atoi(ttlMinutes)
 	if err != nil {
@@ -52,7 +68,37 @@ func Load() (Config, error) {
 	}
 	cfg.TokenTTL = time.Duration(minutes) * time.Minute
 
-	if cfg.DatabaseURL == "" || cfg.JWTSecret == "" {
+	sessionStreamTTLMinutes, err := strconv.Atoi(getEnv("SESSION_STREAM_TTL_MINUTES", "360"))
+	if err != nil {
+		return Config{}, err
+	}
+	cfg.SessionStreamTTL = time.Duration(sessionStreamTTLMinutes) * time.Minute
+
+	maxGPSPointAgeSeconds, err := strconv.Atoi(getEnv("MAX_GPS_POINT_AGE_SECONDS", "300"))
+	if err != nil {
+		return Config{}, err
+	}
+	cfg.MaxGPSPointAge = time.Duration(maxGPSPointAgeSeconds) * time.Second
+
+	maxGPSPointFutureSkewSeconds, err := strconv.Atoi(getEnv("MAX_GPS_POINT_FUTURE_SKEW_SECONDS", "30"))
+	if err != nil {
+		return Config{}, err
+	}
+	cfg.MaxGPSPointFutureSkew = time.Duration(maxGPSPointFutureSkewSeconds) * time.Second
+
+	maxGPSSpeedMPH, err := strconv.ParseFloat(getEnv("MAX_GPS_SPEED_MPH", "15"), 64)
+	if err != nil {
+		return Config{}, err
+	}
+	cfg.MaxGPSSpeedMPH = maxGPSSpeedMPH
+
+	maxStepsPerMinute, err := strconv.ParseFloat(getEnv("MAX_STEPS_PER_MINUTE", "240"), 64)
+	if err != nil {
+		return Config{}, err
+	}
+	cfg.MaxStepsPerMinute = maxStepsPerMinute
+
+	if cfg.DatabaseURL == "" || cfg.JWTSecret == "" || cfg.RedisAddr == "" {
 		return Config{}, errors.New("missing required env vars")
 	}
 
