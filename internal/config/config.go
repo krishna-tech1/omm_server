@@ -15,9 +15,7 @@ type Config struct {
 	DatabaseURL            string
 	JWTSecret              string
 	TokenTTL               time.Duration
-	RedisAddr              string
-	RedisPassword          string
-	RedisDB                int
+	RedisUrl               string
 	SessionStreamTTL       time.Duration
 	MaxGPSPointAge         time.Duration
 	MaxGPSPointFutureSkew  time.Duration
@@ -42,8 +40,7 @@ func Load() (Config, error) {
 		Port:                   getEnv("PORT", "8080"),
 		DatabaseURL:            os.Getenv("DATABASE_URL"),
 		JWTSecret:              os.Getenv("JWT_SECRET"),
-		RedisAddr:              getEnv("REDIS_ADDR", "localhost:6379"),
-		RedisPassword:          os.Getenv("REDIS_PASSWORD"),
+		RedisUrl:               os.Getenv("REDIS_URL"),
 		TwilioAccountSID:       os.Getenv("TWILIO_ACCOUNT_SID"),
 		TwilioAuthToken:        os.Getenv("TWILIO_AUTH_TOKEN"),
 		TwilioVerifyServiceSID: os.Getenv("TWILIO_VERIFY_SERVICE_SID"),
@@ -54,12 +51,6 @@ func Load() (Config, error) {
 		R2PublicBaseURL:        os.Getenv("R2_PUBLIC_BASE_URL"),
 		R2Region:               getEnv("R2_REGION", "auto"),
 	}
-
-	redisDB, err := strconv.Atoi(getEnv("REDIS_DB", "0"))
-	if err != nil {
-		return Config{}, err
-	}
-	cfg.RedisDB = redisDB
 
 	ttlMinutes := getEnv("TOKEN_TTL_MINUTES", "43200")
 	minutes, err := strconv.Atoi(ttlMinutes)
@@ -98,7 +89,7 @@ func Load() (Config, error) {
 	}
 	cfg.MaxStepsPerMinute = maxStepsPerMinute
 
-	if cfg.DatabaseURL == "" || cfg.JWTSecret == "" || cfg.RedisAddr == "" {
+	if cfg.DatabaseURL == "" || cfg.JWTSecret == "" || cfg.RedisUrl == "" {
 		return Config{}, errors.New("missing required env vars")
 	}
 

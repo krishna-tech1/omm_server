@@ -9,11 +9,8 @@ import (
 )
 
 func NewRedisClient(ctx context.Context, cfg config.Config) (*redis.Client, error) {
-	client := redis.NewClient(&redis.Options{
-		Addr:     cfg.RedisAddr,
-		Password: cfg.RedisPassword,
-		DB:       cfg.RedisDB,
-	})
+	opt, _ := redis.ParseURL(cfg.RedisUrl)
+	client := redis.NewClient(opt)
 
 	if err := client.Ping(ctx).Err(); err != nil {
 		_ = client.Close()
