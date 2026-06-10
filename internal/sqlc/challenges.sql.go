@@ -12,19 +12,43 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const countActiveChallengeRegistrationsForUser = `-- name: CountActiveChallengeRegistrationsForUser :one
+SELECT COUNT(*)
+FROM challenge_registrations cr
+JOIN challenges c ON c.id = cr.challenge_id
+WHERE cr.user_id = $1
+  AND cr.status IN ('active', 'pending')
+  AND c.expires_at > $2
+`
+
+type CountActiveChallengeRegistrationsForUserParams struct {
+	UserID    uuid.UUID          `json:"user_id"`
+	ExpiresAt pgtype.Timestamptz `json:"expires_at"`
+}
+
+func (q *Queries) CountActiveChallengeRegistrationsForUser(ctx context.Context, arg CountActiveChallengeRegistrationsForUserParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countActiveChallengeRegistrationsForUser, arg.UserID, arg.ExpiresAt)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createChallenge = `-- name: CreateChallenge :one
-INSERT INTO challenges (id, merchant_id, title, description, target_miles, expires_at)
-VALUES ($1, $2, $3, $4, $5, $6)
-RETURNING id, merchant_id, title, description, target_miles, expires_at, created_at
+INSERT INTO challenges (id, merchant_id, title, description, target_miles, expires_at, duration_days, reward, reward_image_url)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+RETURNING id, merchant_id, title, description, target_miles, expires_at, created_at, duration_days, reward, reward_image_url
 `
 
 type CreateChallengeParams struct {
-	ID          uuid.UUID          `json:"id"`
-	MerchantID  uuid.UUID          `json:"merchant_id"`
-	Title       string             `json:"title"`
-	Description string             `json:"description"`
-	TargetMiles float64            `json:"target_miles"`
-	ExpiresAt   pgtype.Timestamptz `json:"expires_at"`
+	ID             uuid.UUID          `json:"id"`
+	MerchantID     uuid.UUID          `json:"merchant_id"`
+	Title          string             `json:"title"`
+	Description    string             `json:"description"`
+	TargetMiles    float64            `json:"target_miles"`
+	ExpiresAt      pgtype.Timestamptz `json:"expires_at"`
+	DurationDays   int32              `json:"duration_days"`
+	Reward         string             `json:"reward"`
+	RewardImageUrl string             `json:"reward_image_url"`
 }
 
 func (q *Queries) CreateChallenge(ctx context.Context, arg CreateChallengeParams) (Challenge, error) {
@@ -35,6 +59,9 @@ func (q *Queries) CreateChallenge(ctx context.Context, arg CreateChallengeParams
 		arg.Description,
 		arg.TargetMiles,
 		arg.ExpiresAt,
+		arg.DurationDays,
+		arg.Reward,
+		arg.RewardImageUrl,
 	)
 	var i Challenge
 	err := row.Scan(
@@ -45,12 +72,15 @@ func (q *Queries) CreateChallenge(ctx context.Context, arg CreateChallengeParams
 		&i.TargetMiles,
 		&i.ExpiresAt,
 		&i.CreatedAt,
+		&i.DurationDays,
+		&i.Reward,
+		&i.RewardImageUrl,
 	)
 	return i, err
 }
 
 const getChallengeByID = `-- name: GetChallengeByID :one
-SELECT id, merchant_id, title, description, target_miles, expires_at, created_at
+SELECT id, merchant_id, title, description, target_miles, expires_at, created_at, duration_days, reward, reward_image_url
 FROM challenges
 WHERE id = $1
 `
@@ -66,6 +96,9 @@ func (q *Queries) GetChallengeByID(ctx context.Context, id uuid.UUID) (Challenge
 		&i.TargetMiles,
 		&i.ExpiresAt,
 		&i.CreatedAt,
+		&i.DurationDays,
+		&i.Reward,
+		&i.RewardImageUrl,
 	)
 	return i, err
 }
@@ -105,7 +138,7 @@ func (q *Queries) ListActiveChallengeIDsForUser(ctx context.Context, arg ListAct
 }
 
 const listActiveChallenges = `-- name: ListActiveChallenges :many
-SELECT id, merchant_id, title, description, target_miles, expires_at, created_at
+SELECT id, merchant_id, title, description, target_miles, expires_at, created_at, duration_days, reward, reward_image_url
 FROM challenges
 WHERE expires_at > $1
 ORDER BY created_at DESC
@@ -128,6 +161,9 @@ func (q *Queries) ListActiveChallenges(ctx context.Context, expiresAt pgtype.Tim
 			&i.TargetMiles,
 			&i.ExpiresAt,
 			&i.CreatedAt,
+			&i.DurationDays,
+			&i.Reward,
+			&i.RewardImageUrl,
 		); err != nil {
 			return nil, err
 		}
@@ -140,7 +176,7 @@ func (q *Queries) ListActiveChallenges(ctx context.Context, expiresAt pgtype.Tim
 }
 
 const listMerchantChallengesWithCounts = `-- name: ListMerchantChallengesWithCounts :many
-SELECT c.id, c.merchant_id, c.title, c.description, c.target_miles, c.expires_at, c.created_at,
+SELECT c.id, c.merchant_id, c.title, c.description, c.target_miles, c.expires_at, c.duration_days, c.reward, c.reward_image_url, c.created_at,
        COALESCE(r.participants, 0) AS participants
 FROM challenges c
 LEFT JOIN (
@@ -153,14 +189,17 @@ ORDER BY c.created_at DESC
 `
 
 type ListMerchantChallengesWithCountsRow struct {
-	ID           uuid.UUID          `json:"id"`
-	MerchantID   uuid.UUID          `json:"merchant_id"`
-	Title        string             `json:"title"`
-	Description  string             `json:"description"`
-	TargetMiles  float64            `json:"target_miles"`
-	ExpiresAt    pgtype.Timestamptz `json:"expires_at"`
-	CreatedAt    pgtype.Timestamptz `json:"created_at"`
-	Participants int64              `json:"participants"`
+	ID             uuid.UUID          `json:"id"`
+	MerchantID     uuid.UUID          `json:"merchant_id"`
+	Title          string             `json:"title"`
+	Description    string             `json:"description"`
+	TargetMiles    float64            `json:"target_miles"`
+	ExpiresAt      pgtype.Timestamptz `json:"expires_at"`
+	DurationDays   int32              `json:"duration_days"`
+	Reward         string             `json:"reward"`
+	RewardImageUrl string             `json:"reward_image_url"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	Participants   int64              `json:"participants"`
 }
 
 func (q *Queries) ListMerchantChallengesWithCounts(ctx context.Context, merchantID uuid.UUID) ([]ListMerchantChallengesWithCountsRow, error) {
@@ -179,6 +218,9 @@ func (q *Queries) ListMerchantChallengesWithCounts(ctx context.Context, merchant
 			&i.Description,
 			&i.TargetMiles,
 			&i.ExpiresAt,
+			&i.DurationDays,
+			&i.Reward,
+			&i.RewardImageUrl,
 			&i.CreatedAt,
 			&i.Participants,
 		); err != nil {
@@ -246,6 +288,53 @@ func (q *Queries) RegisterChallenge(ctx context.Context, arg RegisterChallengePa
 		&i.UserID,
 		&i.RegisteredAt,
 		&i.Status,
+	)
+	return i, err
+}
+
+const updateChallenge = `-- name: UpdateChallenge :one
+UPDATE challenges
+SET title = $2, description = $3, target_miles = $4, expires_at = $5, duration_days = $6, reward = $7, reward_image_url = $8
+WHERE id = $1 AND merchant_id = $9
+RETURNING id, merchant_id, title, description, target_miles, expires_at, created_at, duration_days, reward, reward_image_url
+`
+
+type UpdateChallengeParams struct {
+	ID             uuid.UUID          `json:"id"`
+	Title          string             `json:"title"`
+	Description    string             `json:"description"`
+	TargetMiles    float64            `json:"target_miles"`
+	ExpiresAt      pgtype.Timestamptz `json:"expires_at"`
+	DurationDays   int32              `json:"duration_days"`
+	Reward         string             `json:"reward"`
+	RewardImageUrl string             `json:"reward_image_url"`
+	MerchantID     uuid.UUID          `json:"merchant_id"`
+}
+
+func (q *Queries) UpdateChallenge(ctx context.Context, arg UpdateChallengeParams) (Challenge, error) {
+	row := q.db.QueryRow(ctx, updateChallenge,
+		arg.ID,
+		arg.Title,
+		arg.Description,
+		arg.TargetMiles,
+		arg.ExpiresAt,
+		arg.DurationDays,
+		arg.Reward,
+		arg.RewardImageUrl,
+		arg.MerchantID,
+	)
+	var i Challenge
+	err := row.Scan(
+		&i.ID,
+		&i.MerchantID,
+		&i.Title,
+		&i.Description,
+		&i.TargetMiles,
+		&i.ExpiresAt,
+		&i.CreatedAt,
+		&i.DurationDays,
+		&i.Reward,
+		&i.RewardImageUrl,
 	)
 	return i, err
 }

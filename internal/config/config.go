@@ -21,6 +21,7 @@ type Config struct {
 	MaxGPSPointFutureSkew  time.Duration
 	MaxGPSSpeedMPH         float64
 	MaxStepsPerMinute      float64
+	MaxStrideLengthMeters  float64
 	TwilioAccountSID       string
 	TwilioAuthToken        string
 	TwilioVerifyServiceSID string
@@ -30,6 +31,8 @@ type Config struct {
 	R2Bucket               string
 	R2PublicBaseURL        string
 	R2Region               string
+	RazorpayKeyID          string
+	RazorpayKeySecret      string
 }
 
 func Load() (Config, error) {
@@ -50,6 +53,8 @@ func Load() (Config, error) {
 		R2Bucket:               os.Getenv("R2_BUCKET"),
 		R2PublicBaseURL:        os.Getenv("R2_PUBLIC_BASE_URL"),
 		R2Region:               getEnv("R2_REGION", "auto"),
+		RazorpayKeyID:          os.Getenv("RAZORPAY_KEY_ID"),
+		RazorpayKeySecret:      os.Getenv("RAZORPAY_KEY_SECRET"),
 	}
 
 	ttlMinutes := getEnv("TOKEN_TTL_MINUTES", "43200")
@@ -88,6 +93,12 @@ func Load() (Config, error) {
 		return Config{}, err
 	}
 	cfg.MaxStepsPerMinute = maxStepsPerMinute
+
+	maxStrideLengthMeters, err := strconv.ParseFloat(getEnv("MAX_STRIDE_LENGTH_METERS", "2.5"), 64)
+	if err != nil {
+		return Config{}, err
+	}
+	cfg.MaxStrideLengthMeters = maxStrideLengthMeters
 
 	if cfg.DatabaseURL == "" || cfg.JWTSecret == "" || cfg.RedisUrl == "" {
 		return Config{}, errors.New("missing required env vars")

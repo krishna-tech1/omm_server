@@ -89,6 +89,12 @@ components:
         expires_at:
           type: string
           format: date-time
+        duration_days:
+          type: integer
+        reward:
+          type: string
+        reward_image_url:
+          type: string
         created_at:
           type: string
           format: date-time
@@ -105,6 +111,12 @@ components:
         expires_at:
           type: string
           format: date-time
+        duration_days:
+          type: integer
+        reward:
+          type: string
+        reward_image_url:
+          type: string
     ChallengeRegistration:
       type: object
       properties:
@@ -697,6 +709,32 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Challenge"
+  /challenges/{id}:
+    post:
+      summary: Update challenge
+      operationId: updateChallenge
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateChallengeRequest"
+      responses:
+        "200":
+          description: Challenge updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Challenge"
   /challenges/{id}/register:
     post:
       summary: Register for challenge
@@ -717,6 +755,21 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ChallengeRegistration"
+  /merchants:
+    get:
+      summary: List all merchants (Admin)
+      operationId: listAllMerchants
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Merchants list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Merchant"
   /merchants/register:
     post:
       summary: Register merchant
@@ -732,6 +785,32 @@ paths:
       responses:
         "200":
           description: Merchant created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Merchant"
+  /merchants/{id}:
+    post:
+      summary: Update merchant profile
+      operationId: updateMerchantProfile
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MerchantRegisterRequest"
+      responses:
+        "200":
+          description: Merchant updated
           content:
             application/json:
               schema:
@@ -829,3 +908,21 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AdminStats"
+  /admin/merchants/{id}/ban:
+    post:
+      summary: Ban a merchant and delete their challenges
+      operationId: banMerchant
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Merchant banned
+        "401":
+          description: Unauthorized

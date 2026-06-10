@@ -193,6 +193,28 @@ func (q *Queries) GetEmployeeByUserID(ctx context.Context, userID uuid.UUID) (Em
 	return i, err
 }
 
+const getMerchantByID = `-- name: GetMerchantByID :one
+SELECT id, owner_user_id, name, category, address_lat, address_lng, logo_url, description, created_at FROM merchants
+WHERE id = $1
+`
+
+func (q *Queries) GetMerchantByID(ctx context.Context, id uuid.UUID) (Merchant, error) {
+	row := q.db.QueryRow(ctx, getMerchantByID, id)
+	var i Merchant
+	err := row.Scan(
+		&i.ID,
+		&i.OwnerUserID,
+		&i.Name,
+		&i.Category,
+		&i.AddressLat,
+		&i.AddressLng,
+		&i.LogoUrl,
+		&i.Description,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const getMerchantByOwner = `-- name: GetMerchantByOwner :one
 SELECT id, owner_user_id, name, category, address_lat, address_lng, logo_url, description, created_at FROM merchants
 WHERE owner_user_id = $1
@@ -308,6 +330,48 @@ func (q *Queries) UpdateEmployee(ctx context.Context, arg UpdateEmployeeParams) 
 		&i.Phone,
 		&i.Code,
 		&i.Status,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const updateMerchantProfile = `-- name: UpdateMerchantProfile :one
+UPDATE merchants
+SET name = $2, category = $3, address_lat = $4, address_lng = $5, logo_url = $6, description = $7
+WHERE id = $1
+RETURNING id, owner_user_id, name, category, address_lat, address_lng, logo_url, description, created_at
+`
+
+type UpdateMerchantProfileParams struct {
+	ID          uuid.UUID `json:"id"`
+	Name        string    `json:"name"`
+	Category    string    `json:"category"`
+	AddressLat  float64   `json:"address_lat"`
+	AddressLng  float64   `json:"address_lng"`
+	LogoUrl     string    `json:"logo_url"`
+	Description string    `json:"description"`
+}
+
+func (q *Queries) UpdateMerchantProfile(ctx context.Context, arg UpdateMerchantProfileParams) (Merchant, error) {
+	row := q.db.QueryRow(ctx, updateMerchantProfile,
+		arg.ID,
+		arg.Name,
+		arg.Category,
+		arg.AddressLat,
+		arg.AddressLng,
+		arg.LogoUrl,
+		arg.Description,
+	)
+	var i Merchant
+	err := row.Scan(
+		&i.ID,
+		&i.OwnerUserID,
+		&i.Name,
+		&i.Category,
+		&i.AddressLat,
+		&i.AddressLng,
+		&i.LogoUrl,
+		&i.Description,
 		&i.CreatedAt,
 	)
 	return i, err
