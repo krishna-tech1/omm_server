@@ -74,6 +74,7 @@ func NewServer(cfg config.Config, queries *db.Queries, pool *pgxpool.Pool, redis
 
 	merchants := protected.Group("/merchants")
 	merchants.Get("", middleware.RequireRole("admin"), handler.ListAllMerchants)
+	merchants.Get("/nearby", handler.ListNearbyMerchants)
 	merchants.Post("/register", handler.RegisterMerchant)
 	merchants.Get("/dashboard", middleware.RequireRole("merchant", "admin"), handler.MerchantDashboard)
 	merchants.Get("/challenges", middleware.RequireRole("merchant", "admin"), handler.ListMerchantChallenges)
@@ -81,7 +82,7 @@ func NewServer(cfg config.Config, queries *db.Queries, pool *pgxpool.Pool, redis
 	merchants.Post("/employees", middleware.RequireRole("merchant", "admin"), handler.CreateEmployee)
 	merchants.Patch("/employees/:id", middleware.RequireRole("merchant", "admin"), handler.UpdateEmployee)
 	merchants.Delete("/employees/:id", middleware.RequireRole("merchant", "admin"), handler.DeleteEmployee)
-	merchants.Post("/:id", middleware.RequireRole("merchant", "admin"), handler.UpdateMerchantProfile)
+	merchants.Post("", middleware.RequireRole("merchant", "admin"), handler.UpdateMerchantProfile)
 
 	categories := protected.Group("/categories")
 	categories.Get("", handler.ListCategories)

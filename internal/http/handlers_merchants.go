@@ -3,6 +3,7 @@ package http
 import (
 	"context"
 	"errors"
+	"strconv"
 	"strings"
 
 	"github.com/gofiber/fiber/v2"
@@ -139,27 +140,17 @@ func (h *Handler) UpdateMerchantProfile(c *fiber.Ctx) error {
 		return h.respondError(c, fiber.StatusUnauthorized, "unauthorized")
 	}
 
-	merchantID, err := uuid.Parse(c.Params("id"))
-	if err != nil {
-		return h.respondError(c, fiber.StatusBadRequest, "invalid merchant id")
-	}
+	ctx, cancel := h.requestContext()
+	defer cancel()
 
 	var req registerMerchantRequest
 	if err := h.parseBody(c, &req); err != nil {
 		return h.respondError(c, fiber.StatusBadRequest, "invalid request")
 	}
 
-	ctx, cancel := h.requestContext()
-	defer cancel()
-
-	// Ensure the user owns this merchant or is an admin
-	merchant, err := h.db.GetMerchantByID(ctx, merchantID)
+	merchant, err := h.db.GetMerchantByOwner(ctx, claims.UserID)
 	if err != nil {
-		return h.respondError(c, fiber.StatusNotFound, "merchant not found")
-	}
-
-	if merchant.OwnerUserID != claims.UserID && claims.Role != string(db.UserRoleAdmin) {
-		return h.respondError(c, fiber.StatusForbidden, "not allowed to edit this merchant")
+		return h.respondError(c, fiber.StatusNotFound, "merchant not found for this user")
 	}
 
 	category := strings.TrimSpace(req.Category)
@@ -174,7 +165,7 @@ func (h *Handler) UpdateMerchantProfile(c *fiber.Ctx) error {
 	}
 
 	updatedMerchant, err := h.db.UpdateMerchantProfile(ctx, db.UpdateMerchantProfileParams{
-		ID:          merchantID,
+		ID:          merchant.ID,
 		Name:        req.Name,
 		Category:    category,
 		AddressLat:  req.AddressLat,
@@ -459,4 +450,35 @@ func (h *Handler) DeleteEmployee(c *fiber.Ctx) error {
 	}
 
 	return c.JSON(mapEmployee(employee))
+}
+
+func (h *Handler) ListNearbyMerchants(c *fiber.Ctx) error {
+	ctx, cancel := h.requestContext()
+	defer cancel()
+
+	latStr := c.Query("lat")
+	lngStr := c.Query("lng")
+
+	lat, err := strconv.ParseFloat(latStr, 64)
+	if err != nil {
+		return h.respondError(c, fiber.StatusBadRequest, "invalid lat")
+	}
+	lng, err := strconv.ParseFloat(lngStr, 64)
+	if err != nil {
+		return h.respondError(c, fiber.StatusBadRequest, "invalid lng")
+	}
+
+	merchants, err := h.db.GetNearbyMerchants(ctx, db.GetNearbyMerchantsParams{
+		Column1: lat,
+		Column2: lng,
+		Column3: 30.0,
+	})
+	if err != nil {
+		return h.respondError(c, fiber.StatusInternalServerError, "failed to get nearby merchants")
+	}
+
+	// db returns []db.GetNearbyMerchantsRow
+	// We might need to map them if we want a specific JSON shape,
+	// but the row has all necessary json tags.
+	return c.JSON(merchants)
 }

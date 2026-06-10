@@ -67,3 +67,10 @@ UPDATE merchants
 SET name = $2, category = $3, address_lat = $4, address_lng = $5, logo_url = $6, description = $7
 WHERE id = $1
 RETURNING *;
+
+-- name: GetNearbyMerchants :many
+SELECT id, owner_user_id, name, category, address_lat, address_lng, logo_url, description, created_at,
+    (3959 * acos(cos(radians($1::double precision)) * cos(radians(address_lat)) * cos(radians(address_lng) - radians($2::double precision)) + sin(radians($1::double precision)) * sin(radians(address_lat))))::double precision AS distance_miles
+FROM merchants
+WHERE (3959 * acos(cos(radians($1::double precision)) * cos(radians(address_lat)) * cos(radians(address_lng) - radians($2::double precision)) + sin(radians($1::double precision)) * sin(radians(address_lat)))) <= $3::double precision
+ORDER BY distance_miles ASC;

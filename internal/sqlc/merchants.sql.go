@@ -9,6 +9,7 @@ import (
 	"context"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const createEmployee = `-- name: CreateEmployee :one
@@ -235,6 +236,64 @@ func (q *Queries) GetMerchantByOwner(ctx context.Context, ownerUserID uuid.UUID)
 		&i.CreatedAt,
 	)
 	return i, err
+}
+
+const getNearbyMerchants = `-- name: GetNearbyMerchants :many
+SELECT id, owner_user_id, name, category, address_lat, address_lng, logo_url, description, created_at,
+    (3959 * acos(cos(radians($1::double precision)) * cos(radians(address_lat)) * cos(radians(address_lng) - radians($2::double precision)) + sin(radians($1::double precision)) * sin(radians(address_lat))))::double precision AS distance_miles
+FROM merchants
+WHERE (3959 * acos(cos(radians($1::double precision)) * cos(radians(address_lat)) * cos(radians(address_lng) - radians($2::double precision)) + sin(radians($1::double precision)) * sin(radians(address_lat)))) <= $3::double precision
+ORDER BY distance_miles ASC
+`
+
+type GetNearbyMerchantsParams struct {
+	Column1 float64 `json:"column_1"`
+	Column2 float64 `json:"column_2"`
+	Column3 float64 `json:"column_3"`
+}
+
+type GetNearbyMerchantsRow struct {
+	ID            uuid.UUID          `json:"id"`
+	OwnerUserID   uuid.UUID          `json:"owner_user_id"`
+	Name          string             `json:"name"`
+	Category      string             `json:"category"`
+	AddressLat    float64            `json:"address_lat"`
+	AddressLng    float64            `json:"address_lng"`
+	LogoUrl       string             `json:"logo_url"`
+	Description   string             `json:"description"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+	DistanceMiles float64            `json:"distance_miles"`
+}
+
+func (q *Queries) GetNearbyMerchants(ctx context.Context, arg GetNearbyMerchantsParams) ([]GetNearbyMerchantsRow, error) {
+	rows, err := q.db.Query(ctx, getNearbyMerchants, arg.Column1, arg.Column2, arg.Column3)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetNearbyMerchantsRow
+	for rows.Next() {
+		var i GetNearbyMerchantsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.OwnerUserID,
+			&i.Name,
+			&i.Category,
+			&i.AddressLat,
+			&i.AddressLng,
+			&i.LogoUrl,
+			&i.Description,
+			&i.CreatedAt,
+			&i.DistanceMiles,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listEmployeesByMerchant = `-- name: ListEmployeesByMerchant :many
