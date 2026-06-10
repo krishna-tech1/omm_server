@@ -770,6 +770,52 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/Merchant"
+    post:
+      summary: Update merchant profile (for current merchant user)
+      operationId: updateMerchantProfile
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MerchantRegisterRequest"
+      responses:
+        "200":
+          description: Merchant updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Merchant"
+  /merchants/nearby:
+    get:
+      summary: List nearby merchants within 30 miles
+      operationId: listNearbyMerchants
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: lat
+          in: query
+          required: true
+          schema:
+            type: number
+            format: double
+        - name: lng
+          in: query
+          required: true
+          schema:
+            type: number
+            format: double
+      responses:
+        "200":
+          description: List of nearby merchants
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Merchant"
   /merchants/register:
     post:
       summary: Register merchant
@@ -785,32 +831,6 @@ paths:
       responses:
         "200":
           description: Merchant created
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Merchant"
-  /merchants/{id}:
-    post:
-      summary: Update merchant profile
-      operationId: updateMerchantProfile
-      security:
-        - bearerAuth: []
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: string
-            format: uuid
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/MerchantRegisterRequest"
-      responses:
-        "200":
-          description: Merchant updated
           content:
             application/json:
               schema:
