@@ -1,5 +1,5 @@
 -- name: ListActiveChallenges :many
-SELECT id, merchant_id, title, description, target_miles, expires_at, created_at
+SELECT *
 FROM challenges
 WHERE expires_at > $1
 ORDER BY created_at DESC;
@@ -13,14 +13,28 @@ WHERE cr.user_id = $1
     AND c.expires_at > $2;
 
 -- name: GetChallengeByID :one
-SELECT id, merchant_id, title, description, target_miles, expires_at, created_at
+SELECT *
 FROM challenges
 WHERE id = $1;
 
 -- name: CreateChallenge :one
-INSERT INTO challenges (id, merchant_id, title, description, target_miles, expires_at)
-VALUES ($1, $2, $3, $4, $5, $6)
-RETURNING id, merchant_id, title, description, target_miles, expires_at, created_at;
+INSERT INTO challenges (id, merchant_id, title, description, target_miles, expires_at, duration_days, reward, reward_image_url)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+RETURNING *;
+
+-- name: UpdateChallenge :one
+UPDATE challenges
+SET title = $2, description = $3, target_miles = $4, expires_at = $5, duration_days = $6, reward = $7, reward_image_url = $8
+WHERE id = $1 AND merchant_id = $9
+RETURNING *;
+
+-- name: CountActiveChallengeRegistrationsForUser :one
+SELECT COUNT(*)
+FROM challenge_registrations cr
+JOIN challenges c ON c.id = cr.challenge_id
+WHERE cr.user_id = $1
+  AND cr.status IN ('active', 'pending')
+  AND c.expires_at > $2;
 
 -- name: RegisterChallenge :one
 INSERT INTO challenge_registrations (id, challenge_id, user_id)
@@ -39,7 +53,7 @@ SET status = 'completed'
 WHERE user_id = $1 AND challenge_id = $2 AND status <> 'completed';
 
 -- name: ListMerchantChallengesWithCounts :many
-SELECT c.id, c.merchant_id, c.title, c.description, c.target_miles, c.expires_at, c.created_at,
+SELECT c.id, c.merchant_id, c.title, c.description, c.target_miles, c.expires_at, c.duration_days, c.reward, c.reward_image_url, c.created_at,
        COALESCE(r.participants, 0) AS participants
 FROM challenges c
 LEFT JOIN (

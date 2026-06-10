@@ -14,7 +14,7 @@ import (
 const createUser = `-- name: CreateUser :one
 INSERT INTO users (id, phone, role)
 VALUES ($1, $2, $3)
-RETURNING id, phone, name, avatar_url, role, created_at
+RETURNING id, phone, name, avatar_url, role, created_at, is_banned, is_premium
 `
 
 type CreateUserParams struct {
@@ -33,12 +33,14 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 		&i.AvatarUrl,
 		&i.Role,
 		&i.CreatedAt,
+		&i.IsBanned,
+		&i.IsPremium,
 	)
 	return i, err
 }
 
 const getUserByID = `-- name: GetUserByID :one
-SELECT id, phone, name, avatar_url, role, created_at
+SELECT id, phone, name, avatar_url, role, created_at, is_banned, is_premium
 FROM users
 WHERE id = $1
 `
@@ -53,12 +55,14 @@ func (q *Queries) GetUserByID(ctx context.Context, id uuid.UUID) (User, error) {
 		&i.AvatarUrl,
 		&i.Role,
 		&i.CreatedAt,
+		&i.IsBanned,
+		&i.IsPremium,
 	)
 	return i, err
 }
 
 const getUserByPhone = `-- name: GetUserByPhone :one
-SELECT id, phone, name, avatar_url, role, created_at
+SELECT id, phone, name, avatar_url, role, created_at, is_banned, is_premium
 FROM users
 WHERE phone = $1
 `
@@ -73,6 +77,8 @@ func (q *Queries) GetUserByPhone(ctx context.Context, phone string) (User, error
 		&i.AvatarUrl,
 		&i.Role,
 		&i.CreatedAt,
+		&i.IsBanned,
+		&i.IsPremium,
 	)
 	return i, err
 }
@@ -81,7 +87,7 @@ const updateUserProfile = `-- name: UpdateUserProfile :one
 UPDATE users
 SET name = $2, avatar_url = $3
 WHERE id = $1
-RETURNING id, phone, name, avatar_url, role, created_at
+RETURNING id, phone, name, avatar_url, role, created_at, is_banned, is_premium
 `
 
 type UpdateUserProfileParams struct {
@@ -100,6 +106,8 @@ func (q *Queries) UpdateUserProfile(ctx context.Context, arg UpdateUserProfilePa
 		&i.AvatarUrl,
 		&i.Role,
 		&i.CreatedAt,
+		&i.IsBanned,
+		&i.IsPremium,
 	)
 	return i, err
 }
@@ -117,5 +125,16 @@ type UpdateUserRoleParams struct {
 
 func (q *Queries) UpdateUserRole(ctx context.Context, arg UpdateUserRoleParams) error {
 	_, err := q.db.Exec(ctx, updateUserRole, arg.ID, arg.Role)
+	return err
+}
+
+const upgradeUserToPremium = `-- name: UpgradeUserToPremium :exec
+UPDATE users
+SET is_premium = true
+WHERE id = $1
+`
+
+func (q *Queries) UpgradeUserToPremium(ctx context.Context, id uuid.UUID) error {
+	_, err := q.db.Exec(ctx, upgradeUserToPremium, id)
 	return err
 }

@@ -57,13 +57,16 @@ func (ns NullUserRole) Value() (driver.Value, error) {
 }
 
 type Challenge struct {
-	ID          uuid.UUID          `json:"id"`
-	MerchantID  uuid.UUID          `json:"merchant_id"`
-	Title       string             `json:"title"`
-	Description string             `json:"description"`
-	TargetMiles float64            `json:"target_miles"`
-	ExpiresAt   pgtype.Timestamptz `json:"expires_at"`
-	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	ID             uuid.UUID          `json:"id"`
+	MerchantID     uuid.UUID          `json:"merchant_id"`
+	Title          string             `json:"title"`
+	Description    string             `json:"description"`
+	TargetMiles    float64            `json:"target_miles"`
+	ExpiresAt      pgtype.Timestamptz `json:"expires_at"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	DurationDays   int32              `json:"duration_days"`
+	Reward         string             `json:"reward"`
+	RewardImageUrl string             `json:"reward_image_url"`
 }
 
 type ChallengeRegistration struct {
@@ -162,4 +165,6 @@ type User struct {
 	AvatarUrl string             `json:"avatar_url"`
 	Role      UserRole           `json:"role"`
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	IsBanned  bool               `json:"is_banned"`
+	IsPremium bool               `json:"is_premium"`
 }

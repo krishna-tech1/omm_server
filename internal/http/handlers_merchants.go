@@ -133,6 +133,62 @@ func (h *Handler) RegisterMerchant(c *fiber.Ctx) error {
 	})
 }
 
+func (h *Handler) UpdateMerchantProfile(c *fiber.Ctx) error {
+	claims, ok := getClaims(c)
+	if !ok {
+		return h.respondError(c, fiber.StatusUnauthorized, "unauthorized")
+	}
+
+	merchantID, err := uuid.Parse(c.Params("id"))
+	if err != nil {
+		return h.respondError(c, fiber.StatusBadRequest, "invalid merchant id")
+	}
+
+	var req registerMerchantRequest
+	if err := h.parseBody(c, &req); err != nil {
+		return h.respondError(c, fiber.StatusBadRequest, "invalid request")
+	}
+
+	ctx, cancel := h.requestContext()
+	defer cancel()
+
+	// Ensure the user owns this merchant or is an admin
+	merchant, err := h.db.GetMerchantByID(ctx, merchantID)
+	if err != nil {
+		return h.respondError(c, fiber.StatusNotFound, "merchant not found")
+	}
+
+	if merchant.OwnerUserID != claims.UserID && claims.Role != string(db.UserRoleAdmin) {
+		return h.respondError(c, fiber.StatusForbidden, "not allowed to edit this merchant")
+	}
+
+	category := strings.TrimSpace(req.Category)
+	if category == "" {
+		category = defaultCategoryName
+	}
+	if _, err := h.db.GetCategoryByName(ctx, category); err != nil {
+		if err == pgx.ErrNoRows {
+			return h.respondError(c, fiber.StatusBadRequest, "invalid category")
+		}
+		return h.respondError(c, fiber.StatusInternalServerError, "failed to load category")
+	}
+
+	updatedMerchant, err := h.db.UpdateMerchantProfile(ctx, db.UpdateMerchantProfileParams{
+		ID:          merchantID,
+		Name:        req.Name,
+		Category:    category,
+		AddressLat:  req.AddressLat,
+		AddressLng:  req.AddressLng,
+		LogoUrl:     req.LogoURL,
+		Description: req.Description,
+	})
+	if err != nil {
+		return h.respondError(c, fiber.StatusInternalServerError, "failed to update merchant")
+	}
+
+	return c.JSON(mapMerchant(updatedMerchant))
+}
+
 func (h *Handler) MerchantDashboard(c *fiber.Ctx) error {
 	claims, ok := getClaims(c)
 	if !ok {

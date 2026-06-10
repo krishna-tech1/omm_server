@@ -46,6 +46,15 @@ func NewServer(cfg config.Config, queries *db.Queries, pool *pgxpool.Pool, redis
 
 	protected := api.Group("", middleware.Auth(cfg))
 
+	// Notifications (SSE)
+	notifications := protected.Group("/notifications")
+	notifications.Get("/stream", handler.StreamNotifications)
+
+	// Payments
+	payments := protected.Group("/payments")
+	payments.Post("/razorpay/order", handler.CreateRazorpayOrder)
+	api.Post("/payments/razorpay/webhook", handler.RazorpayWebhook) // Public webhook
+
 	users := protected.Group("/users")
 	users.Post("/profile", handler.UpdateProfile)
 	users.Get("/coupons", handler.ListUserCoupons)
@@ -60,9 +69,11 @@ func NewServer(cfg config.Config, queries *db.Queries, pool *pgxpool.Pool, redis
 	challenges := protected.Group("/challenges")
 	challenges.Get("", handler.ListChallenges)
 	challenges.Post("/:id/register", handler.RegisterChallenge)
+	challenges.Post("/:id", middleware.RequireRole("merchant", "admin"), handler.UpdateChallenge)
 	challenges.Post("", middleware.RequireRole("merchant", "admin"), handler.CreateChallenge)
 
 	merchants := protected.Group("/merchants")
+	merchants.Get("", middleware.RequireRole("admin"), handler.ListAllMerchants)
 	merchants.Post("/register", handler.RegisterMerchant)
 	merchants.Get("/dashboard", middleware.RequireRole("merchant", "admin"), handler.MerchantDashboard)
 	merchants.Get("/challenges", middleware.RequireRole("merchant", "admin"), handler.ListMerchantChallenges)
@@ -70,6 +81,7 @@ func NewServer(cfg config.Config, queries *db.Queries, pool *pgxpool.Pool, redis
 	merchants.Post("/employees", middleware.RequireRole("merchant", "admin"), handler.CreateEmployee)
 	merchants.Patch("/employees/:id", middleware.RequireRole("merchant", "admin"), handler.UpdateEmployee)
 	merchants.Delete("/employees/:id", middleware.RequireRole("merchant", "admin"), handler.DeleteEmployee)
+	merchants.Post("/:id", middleware.RequireRole("merchant", "admin"), handler.UpdateMerchantProfile)
 
 	categories := protected.Group("/categories")
 	categories.Get("", handler.ListCategories)
@@ -82,6 +94,7 @@ func NewServer(cfg config.Config, queries *db.Queries, pool *pgxpool.Pool, redis
 
 	admin := protected.Group("/admin", middleware.RequireRole("admin"))
 	admin.Get("/stats", handler.AdminStats)
+	admin.Post("/merchants/:id/ban", handler.BanMerchant)
 
 	return app
 }

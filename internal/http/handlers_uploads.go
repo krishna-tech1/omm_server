@@ -101,6 +101,8 @@ func uploadPrefixForPurpose(purpose string) (string, error) {
 		return "avatars", nil
 	case "merchant_logo":
 		return "merchant-logos", nil
+	case "reward_image":
+		return "reward-images", nil
 	default:
 		return "", fmt.Errorf("unsupported purpose")
 	}

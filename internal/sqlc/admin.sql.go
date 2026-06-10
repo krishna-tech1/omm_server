@@ -7,6 +7,8 @@ package db
 
 import (
 	"context"
+
+	"github.com/google/uuid"
 )
 
 const adminStats = `-- name: AdminStats :one
@@ -28,4 +30,86 @@ func (q *Queries) AdminStats(ctx context.Context) (AdminStatsRow, error) {
 	var i AdminStatsRow
 	err := row.Scan(&i.TotalUsers, &i.TotalMerchants, &i.TotalDistanceMiles)
 	return i, err
+}
+
+const banUser = `-- name: BanUser :exec
+UPDATE users SET is_banned = true WHERE id = $1
+`
+
+func (q *Queries) BanUser(ctx context.Context, id uuid.UUID) error {
+	_, err := q.db.Exec(ctx, banUser, id)
+	return err
+}
+
+const cancelMerchantChallenges = `-- name: CancelMerchantChallenges :exec
+UPDATE challenges
+SET expires_at = NOW()
+WHERE merchant_id = $1
+`
+
+func (q *Queries) CancelMerchantChallenges(ctx context.Context, merchantID uuid.UUID) error {
+	_, err := q.db.Exec(ctx, cancelMerchantChallenges, merchantID)
+	return err
+}
+
+const getAffectedUsersByMerchantBan = `-- name: GetAffectedUsersByMerchantBan :many
+SELECT DISTINCT u.phone
+FROM challenge_registrations cr
+JOIN challenges c ON c.id = cr.challenge_id
+JOIN users u ON u.id = cr.user_id
+WHERE c.merchant_id = $1 AND cr.status IN ('active', 'pending')
+`
+
+func (q *Queries) GetAffectedUsersByMerchantBan(ctx context.Context, merchantID uuid.UUID) ([]string, error) {
+	rows, err := q.db.Query(ctx, getAffectedUsersByMerchantBan, merchantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var phone string
+		if err := rows.Scan(&phone); err != nil {
+			return nil, err
+		}
+		items = append(items, phone)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listAllMerchants = `-- name: ListAllMerchants :many
+SELECT id, owner_user_id, name, category, address_lat, address_lng, logo_url, description, created_at FROM merchants ORDER BY created_at DESC
+`
+
+func (q *Queries) ListAllMerchants(ctx context.Context) ([]Merchant, error) {
+	rows, err := q.db.Query(ctx, listAllMerchants)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Merchant
+	for rows.Next() {
+		var i Merchant
+		if err := rows.Scan(
+			&i.ID,
+			&i.OwnerUserID,
+			&i.Name,
+			&i.Category,
+			&i.AddressLat,
+			&i.AddressLng,
+			&i.LogoUrl,
+			&i.Description,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }

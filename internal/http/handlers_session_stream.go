@@ -291,6 +291,19 @@ func (h *Handler) acceptStreamPoint(ctx context.Context, meta sessionStreamMeta,
 			speedViolation = true
 			deltaMeters = 0
 		}
+
+		if h.cfg.MaxStrideLengthMeters > 0 && deltaMeters > 0 {
+			if stepDelta > 0 {
+				if (deltaMeters / float64(stepDelta)) > h.cfg.MaxStrideLengthMeters {
+					speedViolation = true
+					deltaMeters = 0
+				}
+			} else if deltaMeters > 10 {
+				// Moved more than 10 meters without a single step
+				speedViolation = true
+				deltaMeters = 0
+			}
+		}
 	}
 
 	if _, err := h.db.CreateSessionCheckpoint(ctx, db.CreateSessionCheckpointParams{

@@ -3,6 +3,7 @@ package http
 import (
 	"context"
 	"errors"
+	"log"
 	"strings"
 
 	"github.com/gofiber/fiber/v2"
@@ -71,11 +72,17 @@ func (h *Handler) VerifyOTP(c *fiber.Ctx) error {
 				Role:  userRole,
 			})
 			if err != nil {
+				log.Printf("failed to create user: %v", err)
 				return h.respondError(c, fiber.StatusInternalServerError, "failed to create user")
 			}
 		} else {
+			log.Printf("failed to load user: %v", err)
 			return h.respondError(c, fiber.StatusInternalServerError, "failed to load user")
 		}
+	}
+
+	if user.IsBanned {
+		return h.respondError(c, fiber.StatusForbidden, "user is banned")
 	}
 
 	if h.isEmployeePhone(ctx, req.Phone) && user.Role != db.UserRoleEmployee {

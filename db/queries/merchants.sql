@@ -4,8 +4,12 @@ VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 RETURNING id, owner_user_id, name, category, address_lat, address_lng, logo_url, description, created_at;
 
 -- name: GetMerchantByOwner :one
-SELECT * FROM merchants
+SELECT id, owner_user_id, name, category, address_lat, address_lng, logo_url, description, created_at FROM merchants
 WHERE owner_user_id = $1;
+
+-- name: GetMerchantByID :one
+SELECT id, owner_user_id, name, category, address_lat, address_lng, logo_url, description, created_at FROM merchants
+WHERE id = $1;
 
 -- name: MerchantDashboardStats :one
 SELECT
@@ -57,3 +61,9 @@ UPDATE employees
 SET status = 'inactive'
 WHERE id = $1 AND merchant_id = $2
 RETURNING id, merchant_id, user_id, name, phone, code, status, created_at;
+
+-- name: UpdateMerchantProfile :one
+UPDATE merchants
+SET name = $2, category = $3, address_lat = $4, address_lng = $5, logo_url = $6, description = $7
+WHERE id = $1
+RETURNING *;
