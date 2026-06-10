@@ -134,6 +134,26 @@ func (h *Handler) RegisterMerchant(c *fiber.Ctx) error {
 	})
 }
 
+func (h *Handler) GetMerchantProfile(c *fiber.Ctx) error {
+	claims, ok := getClaims(c)
+	if !ok {
+		return h.respondError(c, fiber.StatusUnauthorized, "unauthorized")
+	}
+
+	ctx, cancel := h.requestContext()
+	defer cancel()
+
+	merchant, err := h.db.GetMerchantByOwner(ctx, claims.UserID)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return h.respondError(c, fiber.StatusNotFound, "merchant not found for this user")
+		}
+		return h.respondError(c, fiber.StatusInternalServerError, "failed to load merchant")
+	}
+
+	return c.JSON(mapMerchant(merchant))
+}
+
 func (h *Handler) UpdateMerchantProfile(c *fiber.Ctx) error {
 	claims, ok := getClaims(c)
 	if !ok {
