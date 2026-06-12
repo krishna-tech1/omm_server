@@ -7,6 +7,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
+	"github.com/redis/go-redis/v9"
 
 	"one-more-mile/server/internal/config"
 )
@@ -67,7 +68,7 @@ func ParseToken(cfg config.Config, tokenValue string) (Claims, error) {
 	return *claims, nil
 }
 
-func Auth(cfg config.Config) fiber.Handler {
+func Auth(cfg config.Config, redisClient *redis.Client) fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		tokenValue := BearerToken(c.Get("Authorization"))
 		if tokenValue == "" {
@@ -77,6 +78,13 @@ func Auth(cfg config.Config) fiber.Handler {
 		claims, err := ParseToken(cfg, tokenValue)
 		if err != nil {
 			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "invalid token"})
+		}
+
+		if redisClient != nil {
+			isBanned, _ := redisClient.Exists(c.Context(), "banned:"+claims.UserID.String()).Result()
+			if isBanned > 0 {
+				return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "user is banned"})
+			}
 		}
 
 		c.Locals(claimsKey, claims)

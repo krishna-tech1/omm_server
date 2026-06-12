@@ -31,6 +31,7 @@ func (h *Handler) SendOTP(c *fiber.Ctx) error {
 	user, err := h.db.GetUserByPhone(ctx, req.Phone)
 	if err == nil {
 		if user.IsBanned {
+			h.redis.Set(ctx, "banned:"+user.ID.String(), "1", 0)
 			return h.respondError(c, fiber.StatusForbidden, "user is banned")
 		}
 	} else if err != pgx.ErrNoRows {
@@ -95,6 +96,7 @@ func (h *Handler) VerifyOTP(c *fiber.Ctx) error {
 	}
 
 	if user.IsBanned {
+		h.redis.Set(ctx, "banned:"+user.ID.String(), "1", 0)
 		return h.respondError(c, fiber.StatusForbidden, "user is banned")
 	}
 
