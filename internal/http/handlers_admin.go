@@ -38,6 +38,10 @@ func (h *Handler) ListAllMerchants(c *fiber.Ctx) error {
 	return c.JSON(response)
 }
 
+type banMerchantRequest struct {
+	Remark string `json:"remark"`
+}
+
 func (h *Handler) BanMerchant(c *fiber.Ctx) error {
 	merchantID, err := uuid.Parse(c.Params("id"))
 	if err != nil {
@@ -59,9 +63,17 @@ func (h *Handler) BanMerchant(c *fiber.Ctx) error {
 		log.Printf("Failed to get affected users: %v", err)
 	}
 
+	var req banMerchantRequest
+	_ = h.parseBody(c, &req)
+
+	msg := "Your merchant account has been suspended due to policy violations."
+	if req.Remark != "" {
+		msg += " Remark: " + req.Remark
+	}
+
 	ownerNotice := Notification{
 		Type:    "merchant_banned",
-		Message: "Your merchant account has been suspended due to policy violations.",
+		Message: msg,
 	}
 	ownerBytes, _ := json.Marshal(ownerNotice)
 	h.redis.Publish(ctx, fmt.Sprintf("user_notifications:%s", merchant.OwnerUserID), string(ownerBytes))
@@ -97,8 +109,12 @@ func (h *Handler) BanMerchant(c *fiber.Ctx) error {
 		log.Printf("NOTIFICATION: Sending ban notice to merchant owner %s", ownerUser.Phone)
 	}
 
-	// To logout the banned merchant, we could invalidate sessions if we had a token blocklist.
-	// We'll rely on the middleware checking `is_banned` flag which we should add.
+	// Send a force_logout notification to clear their active session
+	logoutNotice := Notification{
+		Type: "force_logout",
+	}
+	logoutBytes, _ := json.Marshal(logoutNotice)
+	h.redis.Publish(ctx, fmt.Sprintf("user_notifications:%s", merchant.OwnerUserID), string(logoutBytes))
 
 	return c.SendStatus(fiber.StatusOK)
 }
