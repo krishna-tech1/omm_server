@@ -25,6 +25,19 @@ func (h *Handler) SendOTP(c *fiber.Ctx) error {
 		return h.respondError(c, fiber.StatusBadRequest, "invalid request")
 	}
 
+	ctx, cancel := h.requestContext()
+	defer cancel()
+
+	user, err := h.db.GetUserByPhone(ctx, req.Phone)
+	if err == nil {
+		if user.IsBanned {
+			return h.respondError(c, fiber.StatusForbidden, "user is banned")
+		}
+	} else if err != pgx.ErrNoRows {
+		log.Printf("failed to check user ban status: %v", err)
+		return h.respondError(c, fiber.StatusInternalServerError, "internal error")
+	}
+
 	if h.twilioEnabled() {
 		if err := h.sendTwilioOTP(req.Phone); err != nil {
 			return h.respondError(c, fiber.StatusBadRequest, "failed to send otp")
