@@ -103,6 +103,8 @@ func (h *Handler) BanMerchant(c *fiber.Ctx) error {
 		return h.respondError(c, fiber.StatusInternalServerError, "failed to ban merchant")
 	}
 
+	h.redis.Set(ctx, "banned:"+merchant.OwnerUserID.String(), "1", 0)
+
 	// Send notification to the merchant
 	ownerUser, err := h.db.GetUserByID(ctx, merchant.OwnerUserID)
 	if err == nil {

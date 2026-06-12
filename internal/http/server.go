@@ -44,7 +44,7 @@ func NewServer(cfg config.Config, queries *db.Queries, pool *pgxpool.Pool, redis
 	auth.Post("/otp", handler.SendOTP)
 	auth.Post("/verify", handler.VerifyOTP)
 
-	protected := api.Group("", middleware.Auth(cfg))
+	protected := api.Group("", middleware.Auth(cfg, redisClient))
 
 	// Notifications (SSE)
 	notifications := protected.Group("/notifications")
