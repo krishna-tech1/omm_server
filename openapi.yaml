@@ -441,6 +441,8 @@ components:
         redeemed_by_employee_id:
           type: string
           format: uuid
+        barcode_base64:
+          type: string
     RedeemCouponRequest:
       type: object
       required: [coupon_code, employee_code]
@@ -474,6 +476,39 @@ components:
           format: int64
         total_distance_miles:
           type: number
+    SyncSessionPointsRequest:
+      type: object
+      required: [points]
+      properties:
+        points:
+          type: array
+          items:
+            $ref: "#/components/schemas/SessionStreamPoint"
+    BanMerchantRequest:
+      type: object
+      properties:
+        remark:
+          type: string
+    Category:
+      type: object
+      properties:
+        name:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+    CreateCategoryRequest:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+    UpdateCategoryRequest:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
 paths:
   /auth/otp:
     post:
@@ -670,6 +705,38 @@ paths:
       responses:
         "101":
           description: WebSocket upgrade accepted. Messages are JSON objects matching SessionStreamProgress, SessionStreamChallengeCompleted, or SessionStreamError.
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /sessions/{id}/sync:
+    post:
+      summary: Sync offline session points
+      operationId: syncSessionPoints
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SyncSessionPointsRequest"
+      responses:
+        "200":
+          description: Progress or challenge completed event
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionStreamProgress"
         "401":
           description: Unauthorized
           content:
@@ -954,8 +1021,88 @@ paths:
           schema:
             type: string
             format: uuid
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BanMerchantRequest"
       responses:
         "200":
           description: Merchant banned
         "401":
           description: Unauthorized
+  /categories:
+    get:
+      summary: List categories
+      operationId: listCategories
+      responses:
+        "200":
+          description: List of categories
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Category"
+    post:
+      summary: Create category
+      operationId: createCategory
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateCategoryRequest"
+      responses:
+        "200":
+          description: Category created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Category"
+  /categories/{name}:
+    patch:
+      summary: Update category
+      operationId: updateCategory
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateCategoryRequest"
+      responses:
+        "200":
+          description: Category updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Category"
+    delete:
+      summary: Delete category
+      operationId: deleteCategory
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Category deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Category"

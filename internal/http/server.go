@@ -65,6 +65,7 @@ func NewServer(cfg config.Config, queries *db.Queries, pool *pgxpool.Pool, redis
 	sessions := protected.Group("/sessions")
 	sessions.Post("/start", handler.StartSession)
 	sessions.Post("/stop", handler.StopSession)
+	sessions.Post("/:id/sync", handler.SyncSessionPoints)
 
 	challenges := protected.Group("/challenges")
 	challenges.Get("", handler.ListChallenges)

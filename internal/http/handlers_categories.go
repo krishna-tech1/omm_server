@@ -1,6 +1,7 @@
 package http
 
 import (
+	"net/url"
 	"strings"
 	"time"
 
@@ -67,7 +68,8 @@ func (h *Handler) CreateCategory(c *fiber.Ctx) error {
 }
 
 func (h *Handler) UpdateCategory(c *fiber.Ctx) error {
-	oldName := strings.TrimSpace(c.Params("name"))
+	oldName, _ := url.PathUnescape(c.Params("name"))
+	oldName = strings.TrimSpace(oldName)
 	if oldName == "" {
 		return h.respondError(c, fiber.StatusBadRequest, "invalid category")
 	}
@@ -103,7 +105,8 @@ func (h *Handler) UpdateCategory(c *fiber.Ctx) error {
 }
 
 func (h *Handler) DeleteCategory(c *fiber.Ctx) error {
-	name := strings.TrimSpace(c.Params("name"))
+	name, _ := url.PathUnescape(c.Params("name"))
+	name = strings.TrimSpace(name)
 	if name == "" {
 		return h.respondError(c, fiber.StatusBadRequest, "invalid category")
 	}

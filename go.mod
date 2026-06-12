@@ -7,6 +7,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/config v1.32.20
 	github.com/aws/aws-sdk-go-v2/credentials v1.19.19
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.102.2
+	github.com/boombuler/barcode v1.1.0
 	github.com/fasthttp/websocket v1.5.8
 	github.com/go-playground/validator/v10 v10.20.0
 	github.com/gofiber/contrib/websocket v1.3.4

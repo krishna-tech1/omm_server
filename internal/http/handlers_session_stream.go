@@ -185,7 +185,7 @@ func (h *Handler) StreamSession(conn *websocket.Conn) {
 			break
 		}
 
-		result, accepted, err := h.acceptStreamPoint(ctx, meta, &state, point)
+		result, accepted, err := h.acceptStreamPoint(ctx, meta, &state, point, false)
 		if err != nil {
 			_ = writeStreamError(conn, err.Error())
 			continue
@@ -234,7 +234,7 @@ func (h *Handler) StreamSession(conn *websocket.Conn) {
 	}
 }
 
-func (h *Handler) acceptStreamPoint(ctx context.Context, meta sessionStreamMeta, state *sessionStreamState, point streamPointMessage) (*completedChallengeResult, bool, error) {
+func (h *Handler) acceptStreamPoint(ctx context.Context, meta sessionStreamMeta, state *sessionStreamState, point streamPointMessage, isOffline bool) (*completedChallengeResult, bool, error) {
 	if err := validateStreamPointBasics(point); err != nil {
 		return nil, false, err
 	}
@@ -243,8 +243,10 @@ func (h *Handler) acceptStreamPoint(ctx context.Context, meta sessionStreamMeta,
 	}
 
 	now := time.Now()
-	if point.Timestamp.Before(now.Add(-h.cfg.MaxGPSPointAge)) {
-		return nil, false, errors.New("gps point is too old")
+	if !isOffline {
+		if point.Timestamp.Before(now.Add(-h.cfg.MaxGPSPointAge)) {
+			return nil, false, errors.New("gps point is too old")
+		}
 	}
 	if point.Timestamp.After(now.Add(h.cfg.MaxGPSPointFutureSkew)) {
 		return nil, false, errors.New("gps point timestamp is in the future")
@@ -585,4 +587,79 @@ func sessionStreamCompletionLockKey(sessionID uuid.UUID) string {
 
 func roundMiles(value float64) float64 {
 	return math.Round(value*10000) / 10000
+}
+
+type syncSessionPointsRequest struct {
+	Points []streamPointMessage `json:"points" validate:"required,dive"`
+}
+
+func (h *Handler) SyncSessionPoints(c *fiber.Ctx) error {
+	claims, ok := getClaims(c)
+	if !ok {
+		return h.respondError(c, fiber.StatusUnauthorized, "unauthorized")
+	}
+
+	sessionID, err := uuid.Parse(c.Params("id"))
+	if err != nil {
+		return h.respondError(c, fiber.StatusBadRequest, "invalid session id")
+	}
+
+	var req syncSessionPointsRequest
+	if err := h.parseBody(c, &req); err != nil {
+		return h.respondError(c, fiber.StatusBadRequest, "invalid request")
+	}
+
+	ctx, cancel := h.requestContext()
+	defer cancel()
+
+	meta, err := h.getSessionStreamMeta(ctx, sessionID, claims.UserID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return h.respondError(c, fiber.StatusNotFound, "active session not found")
+		}
+		return h.respondError(c, fiber.StatusInternalServerError, "failed to load session")
+	}
+
+	state, err := h.getSessionStreamState(ctx, meta)
+	if err != nil {
+		return h.respondError(c, fiber.StatusInternalServerError, "failed to load session stream state")
+	}
+
+	var completedResult *completedChallengeResult
+
+	for _, point := range req.Points {
+		res, accepted, err := h.acceptStreamPoint(ctx, meta, &state, point, true)
+		if err != nil {
+			return h.respondError(c, fiber.StatusBadRequest, "invalid point: "+err.Error())
+		}
+		if accepted && res != nil {
+			completedResult = res
+		}
+	}
+
+	_ = h.db.UpdateSessionProgress(ctx, db.UpdateSessionProgressParams{
+		ID:            meta.SessionID,
+		DistanceMiles: state.DistanceMiles,
+	})
+
+	response := streamProgressMessage{
+		Type:          streamTypeProgress,
+		SessionID:     meta.SessionID,
+		ChallengeID:   meta.ChallengeID,
+		DistanceMiles: roundMiles(state.DistanceMiles),
+		TargetMiles:   meta.TargetMiles,
+		Steps:         state.StepsLast,
+		Seq:           state.LastSeq,
+		Completed:     state.Completed,
+	}
+
+	if completedResult != nil {
+		response.Type = streamTypeChallengeCompleted
+		response.Completed = true
+		response.CouponCode = completedResult.CouponCode
+		response.CouponStatus = completedResult.CouponStatus
+		response.Message = fmt.Sprintf("challenge #%s complete!", meta.ChallengeID.String())
+	}
+
+	return c.JSON(response)
 }

@@ -7,6 +7,12 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 
+	"bytes"
+	"encoding/base64"
+	"image/png"
+	"github.com/boombuler/barcode"
+	"github.com/boombuler/barcode/code128"
+
 	db "one-more-mile/server/internal/sqlc"
 )
 
@@ -70,6 +76,7 @@ type couponResponse struct {
 	IssuedAt         time.Time  `json:"issued_at"`
 	RedeemedAt       *time.Time `json:"redeemed_at,omitempty"`
 	RedeemedEmployee *uuid.UUID `json:"redeemed_by_employee_id,omitempty"`
+	BarcodeBase64    string     `json:"barcode_base64,omitempty"`
 }
 
 func (h *Handler) ListUserCoupons(c *fiber.Ctx) error {
@@ -95,7 +102,7 @@ func (h *Handler) ListUserCoupons(c *fiber.Ctx) error {
 }
 
 func mapCoupon(coupon db.Coupon) couponResponse {
-	return couponResponse{
+	resp := couponResponse{
 		ID:               coupon.ID,
 		Code:             coupon.Code,
 		Status:           coupon.Status,
@@ -105,6 +112,19 @@ func mapCoupon(coupon db.Coupon) couponResponse {
 		RedeemedAt:       timePtrFromTimestamptz(coupon.RedeemedAt),
 		RedeemedEmployee: uuidPtrFromUUID(coupon.RedeemedByEmployeeID),
 	}
+
+	if coupon.Status == "active" {
+		if bc, err := code128.Encode(coupon.Code); err == nil {
+			if scaled, err := barcode.Scale(bc, 300, 100); err == nil {
+				var buf bytes.Buffer
+				if err := png.Encode(&buf, scaled); err == nil {
+					resp.BarcodeBase64 = base64.StdEncoding.EncodeToString(buf.Bytes())
+				}
+			}
+		}
+	}
+
+	return resp
 }
 
 func timePtrFromTimestamptz(value pgtype.Timestamptz) *time.Time {
