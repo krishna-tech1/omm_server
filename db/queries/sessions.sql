@@ -1,8 +1,8 @@
 -- name: CreateSession :one
-INSERT INTO sessions (id, user_id, challenge_id, start_time, start_lat, start_lng, steps_start, miles_start, status, hmac_secret)
+INSERT INTO sessions (id, user_id, challenge_id, start_time, start_lat, start_lng, steps_start, miles_start, status, public_key)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 RETURNING id, user_id, challenge_id, start_time, end_time, start_lat, start_lng, end_lat, end_lng,
-          steps_start, steps_end, miles_start, miles_end, distance_miles, status, hmac_secret, created_at, updated_at;
+          steps_start, steps_end, miles_start, miles_end, distance_miles, status, public_key, created_at, updated_at;
 
 -- name: GetSessionByID :one
 SELECT * FROM sessions
@@ -14,7 +14,7 @@ WHERE id = $1 AND user_id = $2;
 
 -- name: GetActiveSessionStreamMeta :one
 SELECT s.id, s.user_id, s.challenge_id, s.start_time, s.start_lat, s.start_lng,
-       s.steps_start, s.miles_start, s.distance_miles, s.status, s.hmac_secret,
+       s.steps_start, s.miles_start, s.distance_miles, s.status, s.public_key,
        c.title AS challenge_title, c.target_miles, c.expires_at,
        cr.status AS registration_status
 FROM sessions s

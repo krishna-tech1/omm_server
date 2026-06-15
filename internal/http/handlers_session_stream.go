@@ -2,8 +2,12 @@ package http
 
 import (
 	"context"
-	"crypto/subtle"
+	"crypto/ecdsa"
+	"crypto/sha256"
+	"crypto/x509"
+	"encoding/base64"
 	"encoding/json"
+	"encoding/pem"
 	"errors"
 	"fmt"
 	"math"
@@ -45,7 +49,7 @@ type sessionStreamMeta struct {
 	ChallengeID    uuid.UUID `json:"challenge_id"`
 	ChallengeTitle string    `json:"challenge_title"`
 	TargetMiles    float64   `json:"target_miles"`
-	HMACSecret     string    `json:"hmac_secret"`
+	PublicKey      string    `json:"public_key"`
 	StartLat       float64   `json:"start_lat"`
 	StartLng       float64   `json:"start_lng"`
 	StepsStart     int32     `json:"steps_start"`
@@ -238,7 +242,7 @@ func (h *Handler) acceptStreamPoint(ctx context.Context, meta sessionStreamMeta,
 	if err := validateStreamPointBasics(point); err != nil {
 		return nil, false, err
 	}
-	if !validPointSignature(meta.SessionID, meta.HMACSecret, point) {
+	if !validPointSignature(meta.SessionID, meta.PublicKey, point) {
 		return nil, false, errors.New("invalid point signature")
 	}
 
@@ -371,7 +375,7 @@ func (h *Handler) getSessionStreamMeta(ctx context.Context, sessionID, userID uu
 		ChallengeID:    row.ChallengeID,
 		ChallengeTitle: row.ChallengeTitle,
 		TargetMiles:    row.TargetMiles,
-		HMACSecret:     row.HmacSecret,
+		PublicKey:      row.PublicKey,
 		StartLat:       row.StartLat,
 		StartLng:       row.StartLng,
 		StepsStart:     row.StepsStart,
@@ -538,9 +542,32 @@ func validateStreamPointBasics(point streamPointMessage) error {
 	return nil
 }
 
-func validPointSignature(sessionID uuid.UUID, secret string, point streamPointMessage) bool {
-	expected := util.HMACSHA256Hex(secret, []byte(pointSignaturePayload(sessionID, point)))
-	return subtle.ConstantTimeCompare([]byte(strings.ToLower(point.Signature)), []byte(expected)) == 1
+func validPointSignature(sessionID uuid.UUID, pubKeyStr string, point streamPointMessage) bool {
+	payload := pointSignaturePayload(sessionID, point)
+	hash := sha256.Sum256([]byte(payload))
+
+	sigBytes, err := base64.StdEncoding.DecodeString(point.Signature)
+	if err != nil {
+		return false
+	}
+
+	var pubKeyAny any
+	block, _ := pem.Decode([]byte(pubKeyStr))
+	if block != nil {
+		pubKeyAny, err = x509.ParsePKIXPublicKey(block.Bytes)
+	} else {
+		derBytes, err2 := base64.StdEncoding.DecodeString(pubKeyStr)
+		if err2 == nil {
+			pubKeyAny, _ = x509.ParsePKIXPublicKey(derBytes)
+		}
+	}
+
+	pubKey, ok := pubKeyAny.(*ecdsa.PublicKey)
+	if !ok || pubKey == nil {
+		return false
+	}
+
+	return ecdsa.VerifyASN1(pubKey, hash[:], sigBytes)
 }
 
 func pointSignaturePayload(sessionID uuid.UUID, point streamPointMessage) string {

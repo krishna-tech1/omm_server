@@ -16,8 +16,8 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.6.0
 	github.com/joho/godotenv v1.5.1
-	github.com/razorpay/razorpay-go v1.4.1
 	github.com/redis/go-redis/v9 v9.20.0
+	github.com/stripe/stripe-go/v78 v78.12.0
 	github.com/twilio/twilio-go v1.30.9
 	github.com/valyala/fasthttp v1.52.0
 )
@@ -54,6 +54,7 @@ require (
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/rivo/uniseg v0.2.0 // indirect
 	github.com/savsgio/gotils v0.0.0-20240303185622-093b76447511 // indirect
+	github.com/stretchr/testify v1.11.1 // indirect
 	github.com/valyala/bytebufferpool v1.0.0 // indirect
 	github.com/valyala/tcplisten v1.0.0 // indirect
 	go.uber.org/atomic v1.11.0 // indirect

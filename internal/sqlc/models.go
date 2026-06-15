@@ -140,7 +140,7 @@ type Session struct {
 	MilesEnd      float64            `json:"miles_end"`
 	DistanceMiles float64            `json:"distance_miles"`
 	Status        string             `json:"status"`
-	HmacSecret    string             `json:"hmac_secret"`
+	PublicKey     string             `json:"public_key"`
 	CreatedAt     pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
 }
