@@ -13,10 +13,10 @@ import (
 )
 
 const createSession = `-- name: CreateSession :one
-INSERT INTO sessions (id, user_id, challenge_id, start_time, start_lat, start_lng, steps_start, miles_start, status, hmac_secret)
+INSERT INTO sessions (id, user_id, challenge_id, start_time, start_lat, start_lng, steps_start, miles_start, status, public_key)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 RETURNING id, user_id, challenge_id, start_time, end_time, start_lat, start_lng, end_lat, end_lng,
-          steps_start, steps_end, miles_start, miles_end, distance_miles, status, hmac_secret, created_at, updated_at
+          steps_start, steps_end, miles_start, miles_end, distance_miles, status, public_key, created_at, updated_at
 `
 
 type CreateSessionParams struct {
@@ -29,7 +29,7 @@ type CreateSessionParams struct {
 	StepsStart  int32              `json:"steps_start"`
 	MilesStart  float64            `json:"miles_start"`
 	Status      string             `json:"status"`
-	HmacSecret  string             `json:"hmac_secret"`
+	PublicKey   string             `json:"public_key"`
 }
 
 func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) (Session, error) {
@@ -43,7 +43,7 @@ func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) (S
 		arg.StepsStart,
 		arg.MilesStart,
 		arg.Status,
-		arg.HmacSecret,
+		arg.PublicKey,
 	)
 	var i Session
 	err := row.Scan(
@@ -62,7 +62,7 @@ func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) (S
 		&i.MilesEnd,
 		&i.DistanceMiles,
 		&i.Status,
-		&i.HmacSecret,
+		&i.PublicKey,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -122,7 +122,7 @@ func (q *Queries) CreateSessionCheckpoint(ctx context.Context, arg CreateSession
 
 const getActiveSessionStreamMeta = `-- name: GetActiveSessionStreamMeta :one
 SELECT s.id, s.user_id, s.challenge_id, s.start_time, s.start_lat, s.start_lng,
-       s.steps_start, s.miles_start, s.distance_miles, s.status, s.hmac_secret,
+       s.steps_start, s.miles_start, s.distance_miles, s.status, s.public_key,
        c.title AS challenge_title, c.target_miles, c.expires_at,
        cr.status AS registration_status
 FROM sessions s
@@ -150,7 +150,7 @@ type GetActiveSessionStreamMetaRow struct {
 	MilesStart         float64            `json:"miles_start"`
 	DistanceMiles      float64            `json:"distance_miles"`
 	Status             string             `json:"status"`
-	HmacSecret         string             `json:"hmac_secret"`
+	PublicKey          string             `json:"public_key"`
 	ChallengeTitle     string             `json:"challenge_title"`
 	TargetMiles        float64            `json:"target_miles"`
 	ExpiresAt          pgtype.Timestamptz `json:"expires_at"`
@@ -171,7 +171,7 @@ func (q *Queries) GetActiveSessionStreamMeta(ctx context.Context, arg GetActiveS
 		&i.MilesStart,
 		&i.DistanceMiles,
 		&i.Status,
-		&i.HmacSecret,
+		&i.PublicKey,
 		&i.ChallengeTitle,
 		&i.TargetMiles,
 		&i.ExpiresAt,
@@ -181,7 +181,7 @@ func (q *Queries) GetActiveSessionStreamMeta(ctx context.Context, arg GetActiveS
 }
 
 const getSessionByID = `-- name: GetSessionByID :one
-SELECT id, user_id, challenge_id, start_time, end_time, start_lat, start_lng, end_lat, end_lng, steps_start, steps_end, miles_start, miles_end, distance_miles, status, hmac_secret, created_at, updated_at FROM sessions
+SELECT id, user_id, challenge_id, start_time, end_time, start_lat, start_lng, end_lat, end_lng, steps_start, steps_end, miles_start, miles_end, distance_miles, status, public_key, created_at, updated_at FROM sessions
 WHERE id = $1
 `
 
@@ -204,7 +204,7 @@ func (q *Queries) GetSessionByID(ctx context.Context, id uuid.UUID) (Session, er
 		&i.MilesEnd,
 		&i.DistanceMiles,
 		&i.Status,
-		&i.HmacSecret,
+		&i.PublicKey,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -212,7 +212,7 @@ func (q *Queries) GetSessionByID(ctx context.Context, id uuid.UUID) (Session, er
 }
 
 const getSessionForUser = `-- name: GetSessionForUser :one
-SELECT id, user_id, challenge_id, start_time, end_time, start_lat, start_lng, end_lat, end_lng, steps_start, steps_end, miles_start, miles_end, distance_miles, status, hmac_secret, created_at, updated_at FROM sessions
+SELECT id, user_id, challenge_id, start_time, end_time, start_lat, start_lng, end_lat, end_lng, steps_start, steps_end, miles_start, miles_end, distance_miles, status, public_key, created_at, updated_at FROM sessions
 WHERE id = $1 AND user_id = $2
 `
 
@@ -240,7 +240,7 @@ func (q *Queries) GetSessionForUser(ctx context.Context, arg GetSessionForUserPa
 		&i.MilesEnd,
 		&i.DistanceMiles,
 		&i.Status,
-		&i.HmacSecret,
+		&i.PublicKey,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)

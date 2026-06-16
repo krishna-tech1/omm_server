@@ -52,8 +52,8 @@ func NewServer(cfg config.Config, queries *db.Queries, pool *pgxpool.Pool, redis
 
 	// Payments
 	payments := protected.Group("/payments")
-	payments.Post("/razorpay/order", handler.CreateRazorpayOrder)
-	api.Post("/payments/razorpay/webhook", handler.RazorpayWebhook) // Public webhook
+	payments.Post("/stripe/intent", handler.CreateStripeIntent)
+	api.Post("/payments/stripe/webhook", handler.StripeWebhook) // Public webhook
 
 	users := protected.Group("/users")
 	users.Post("/profile", handler.UpdateProfile)

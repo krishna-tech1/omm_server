@@ -20,12 +20,13 @@ type startSessionRequest struct {
 	StartLng     float64     `json:"start_lng" validate:"required"`
 	StepsStart   int32       `json:"steps_start"`
 	MilesStart   float64     `json:"miles_start"`
+	PublicKey    string      `json:"public_key" validate:"required"`
 }
 
 type startSessionResult struct {
 	SessionID   uuid.UUID `json:"session_id"`
 	ChallengeID uuid.UUID `json:"challenge_id"`
-	HMACSecret  string    `json:"hmac_secret"`
+	PublicKey   string    `json:"public_key"`
 	Status      string    `json:"status"`
 	StartTime   time.Time `json:"start_time"`
 }
@@ -119,11 +120,6 @@ func (h *Handler) StartSession(c *fiber.Ctx) error {
 	}
 
 	for _, challengeID := range startIDs {
-		secret, err := util.RandomHex(32)
-		if err != nil {
-			return h.respondError(c, fiber.StatusInternalServerError, "failed to create session")
-		}
-
 		session, err := queries.CreateSession(ctx, db.CreateSessionParams{
 			ID:          uuid.New(),
 			UserID:      claims.UserID,
@@ -134,16 +130,16 @@ func (h *Handler) StartSession(c *fiber.Ctx) error {
 			StepsStart:  req.StepsStart,
 			MilesStart:  req.MilesStart,
 			Status:      "active",
-			HmacSecret:  secret,
+			PublicKey:   req.PublicKey,
 		})
 		if err != nil {
-			return h.respondError(c, fiber.StatusInternalServerError, "failed to start session")
+			return h.respondError(c, fiber.StatusInternalServerError, "failed to start session: "+err.Error())
 		}
 
 		response.Sessions = append(response.Sessions, startSessionResult{
 			SessionID:   session.ID,
 			ChallengeID: session.ChallengeID,
-			HMACSecret:  session.HmacSecret,
+			PublicKey:   session.PublicKey,
 			Status:      session.Status,
 			StartTime:   fromPgTimestamptz(session.StartTime),
 		})
