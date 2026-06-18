@@ -70,11 +70,12 @@ type Challenge struct {
 }
 
 type ChallengeRegistration struct {
-	ID           uuid.UUID          `json:"id"`
-	ChallengeID  uuid.UUID          `json:"challenge_id"`
-	UserID       uuid.UUID          `json:"user_id"`
-	RegisteredAt pgtype.Timestamptz `json:"registered_at"`
-	Status       string             `json:"status"`
+	ID              uuid.UUID          `json:"id"`
+	ChallengeID     uuid.UUID          `json:"challenge_id"`
+	UserID          uuid.UUID          `json:"user_id"`
+	RegisteredAt    pgtype.Timestamptz `json:"registered_at"`
+	Status          string             `json:"status"`
+	DistanceCovered float64            `json:"distance_covered"`
 }
 
 type Coupon struct {

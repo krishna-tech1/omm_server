@@ -40,7 +40,7 @@ WHERE cr.user_id = $1
 INSERT INTO challenge_registrations (id, challenge_id, user_id)
 VALUES ($1, $2, $3)
 ON CONFLICT (challenge_id, user_id) DO UPDATE SET registered_at = challenge_registrations.registered_at
-RETURNING id, challenge_id, user_id, registered_at, status;
+RETURNING *;
 
 -- name: MarkChallengeRegistrationCompleted :exec
 UPDATE challenge_registrations
@@ -63,3 +63,16 @@ LEFT JOIN (
 ) r ON r.challenge_id = c.id
 WHERE c.merchant_id = $1
 ORDER BY c.created_at DESC;
+
+-- name: GetChallengeRegistrationForUser :one
+SELECT * FROM challenge_registrations
+WHERE challenge_id = $1 AND user_id = $2;
+
+-- name: GetChallengeRegistrationsForUser :many
+SELECT * FROM challenge_registrations
+WHERE user_id = $1;
+
+-- name: AddRegistrationDistance :exec
+UPDATE challenge_registrations
+SET distance_covered = distance_covered + $3
+WHERE challenge_id = $1 AND user_id = $2;

@@ -124,7 +124,7 @@ const getActiveSessionStreamMeta = `-- name: GetActiveSessionStreamMeta :one
 SELECT s.id, s.user_id, s.challenge_id, s.start_time, s.start_lat, s.start_lng,
        s.steps_start, s.miles_start, s.distance_miles, s.status, s.public_key,
        c.title AS challenge_title, c.target_miles, c.expires_at,
-       cr.status AS registration_status
+       cr.status AS registration_status, cr.distance_covered
 FROM sessions s
 JOIN challenges c ON c.id = s.challenge_id
 JOIN challenge_registrations cr ON cr.challenge_id = s.challenge_id AND cr.user_id = s.user_id
@@ -155,6 +155,7 @@ type GetActiveSessionStreamMetaRow struct {
 	TargetMiles        float64            `json:"target_miles"`
 	ExpiresAt          pgtype.Timestamptz `json:"expires_at"`
 	RegistrationStatus string             `json:"registration_status"`
+	DistanceCovered    float64            `json:"distance_covered"`
 }
 
 func (q *Queries) GetActiveSessionStreamMeta(ctx context.Context, arg GetActiveSessionStreamMetaParams) (GetActiveSessionStreamMetaRow, error) {
@@ -176,6 +177,7 @@ func (q *Queries) GetActiveSessionStreamMeta(ctx context.Context, arg GetActiveS
 		&i.TargetMiles,
 		&i.ExpiresAt,
 		&i.RegistrationStatus,
+		&i.DistanceCovered,
 	)
 	return i, err
 }

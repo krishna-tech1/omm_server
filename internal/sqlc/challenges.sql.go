@@ -12,6 +12,23 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const addRegistrationDistance = `-- name: AddRegistrationDistance :exec
+UPDATE challenge_registrations
+SET distance_covered = distance_covered + $3
+WHERE challenge_id = $1 AND user_id = $2
+`
+
+type AddRegistrationDistanceParams struct {
+	ChallengeID     uuid.UUID `json:"challenge_id"`
+	UserID          uuid.UUID `json:"user_id"`
+	DistanceCovered float64   `json:"distance_covered"`
+}
+
+func (q *Queries) AddRegistrationDistance(ctx context.Context, arg AddRegistrationDistanceParams) error {
+	_, err := q.db.Exec(ctx, addRegistrationDistance, arg.ChallengeID, arg.UserID, arg.DistanceCovered)
+	return err
+}
+
 const countActiveChallengeRegistrationsForUser = `-- name: CountActiveChallengeRegistrationsForUser :one
 SELECT COUNT(*)
 FROM challenge_registrations cr
@@ -101,6 +118,62 @@ func (q *Queries) GetChallengeByID(ctx context.Context, id uuid.UUID) (Challenge
 		&i.RewardImageUrl,
 	)
 	return i, err
+}
+
+const getChallengeRegistrationForUser = `-- name: GetChallengeRegistrationForUser :one
+SELECT id, challenge_id, user_id, registered_at, status, distance_covered FROM challenge_registrations
+WHERE challenge_id = $1 AND user_id = $2
+`
+
+type GetChallengeRegistrationForUserParams struct {
+	ChallengeID uuid.UUID `json:"challenge_id"`
+	UserID      uuid.UUID `json:"user_id"`
+}
+
+func (q *Queries) GetChallengeRegistrationForUser(ctx context.Context, arg GetChallengeRegistrationForUserParams) (ChallengeRegistration, error) {
+	row := q.db.QueryRow(ctx, getChallengeRegistrationForUser, arg.ChallengeID, arg.UserID)
+	var i ChallengeRegistration
+	err := row.Scan(
+		&i.ID,
+		&i.ChallengeID,
+		&i.UserID,
+		&i.RegisteredAt,
+		&i.Status,
+		&i.DistanceCovered,
+	)
+	return i, err
+}
+
+const getChallengeRegistrationsForUser = `-- name: GetChallengeRegistrationsForUser :many
+SELECT id, challenge_id, user_id, registered_at, status, distance_covered FROM challenge_registrations
+WHERE user_id = $1
+`
+
+func (q *Queries) GetChallengeRegistrationsForUser(ctx context.Context, userID uuid.UUID) ([]ChallengeRegistration, error) {
+	rows, err := q.db.Query(ctx, getChallengeRegistrationsForUser, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ChallengeRegistration
+	for rows.Next() {
+		var i ChallengeRegistration
+		if err := rows.Scan(
+			&i.ID,
+			&i.ChallengeID,
+			&i.UserID,
+			&i.RegisteredAt,
+			&i.Status,
+			&i.DistanceCovered,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listActiveChallengeIDsForUser = `-- name: ListActiveChallengeIDsForUser :many
@@ -270,7 +343,7 @@ const registerChallenge = `-- name: RegisterChallenge :one
 INSERT INTO challenge_registrations (id, challenge_id, user_id)
 VALUES ($1, $2, $3)
 ON CONFLICT (challenge_id, user_id) DO UPDATE SET registered_at = challenge_registrations.registered_at
-RETURNING id, challenge_id, user_id, registered_at, status
+RETURNING id, challenge_id, user_id, registered_at, status, distance_covered
 `
 
 type RegisterChallengeParams struct {
@@ -288,6 +361,7 @@ func (q *Queries) RegisterChallenge(ctx context.Context, arg RegisterChallengePa
 		&i.UserID,
 		&i.RegisteredAt,
 		&i.Status,
+		&i.DistanceCovered,
 	)
 	return i, err
 }

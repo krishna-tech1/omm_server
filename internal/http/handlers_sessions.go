@@ -301,6 +301,17 @@ func (h *Handler) StopSession(c *fiber.Ctx) error {
 			return h.respondError(c, fiber.StatusInternalServerError, "failed to finalize session")
 		}
 
+		// Accumulate this session's distance onto the registration's total.
+		// Skip if the registration was already completed mid-stream (distance
+		// was already added by completeChallengeFromStream).
+		reg, err := queries.GetChallengeRegistrationForUser(ctx, db.GetChallengeRegistrationForUserParams{
+			ChallengeID: session.ChallengeID,
+			UserID:      claims.UserID,
+		})
+		if err != nil {
+			return h.respondError(c, fiber.StatusInternalServerError, "failed to load registration")
+		}
+
 		result := stopSessionResult{
 			SessionID:     session.ID,
 			ChallengeID:   session.ChallengeID,
@@ -308,33 +319,56 @@ func (h *Handler) StopSession(c *fiber.Ctx) error {
 			DistanceMiles: distanceMiles,
 		}
 
-		if targetMiles, ok := challengeTargets[session.ChallengeID]; ok && distanceMiles >= targetMiles {
-			code, err := util.RandomCouponCode(10)
-			if err != nil {
-				return h.respondError(c, fiber.StatusInternalServerError, "failed to issue coupon")
-			}
-
-			coupon, err := queries.CreateCouponIfNotExists(ctx, db.CreateCouponIfNotExistsParams{
-				ID:          uuid.New(),
+		if reg.Status == "completed" {
+			// Challenge was already completed mid-stream; just fetch existing coupon
+			coupon, err := queries.GetCouponByUserChallenge(ctx, db.GetCouponByUserChallengeParams{
 				UserID:      claims.UserID,
 				ChallengeID: session.ChallengeID,
-				SessionID:   session.ID,
-				Code:        code,
-				Status:      "active",
 			})
-			if err != nil {
-				return h.respondError(c, fiber.StatusInternalServerError, "failed to issue coupon")
+			if err == nil {
+				result.CouponCode = coupon.Code
+				result.CouponStatus = coupon.Status
+			} else if err != pgx.ErrNoRows {
+				return h.respondError(c, fiber.StatusInternalServerError, "failed to load coupon")
 			}
-
-			if err := queries.MarkChallengeRegistrationCompletedIfActive(ctx, db.MarkChallengeRegistrationCompletedIfActiveParams{
-				UserID:      claims.UserID,
-				ChallengeID: session.ChallengeID,
+		} else {
+			if err := queries.AddRegistrationDistance(ctx, db.AddRegistrationDistanceParams{
+				ChallengeID:     session.ChallengeID,
+				UserID:          claims.UserID,
+				DistanceCovered: distanceMiles,
 			}); err != nil {
-				return h.respondError(c, fiber.StatusInternalServerError, "failed to finalize challenge")
+				return h.respondError(c, fiber.StatusInternalServerError, "failed to update challenge progress")
 			}
 
-			result.CouponCode = coupon.Code
-			result.CouponStatus = coupon.Status
+			totalDistance := reg.DistanceCovered + distanceMiles
+			if targetMiles, ok := challengeTargets[session.ChallengeID]; ok && totalDistance >= targetMiles {
+				code, err := util.RandomCouponCode(10)
+				if err != nil {
+					return h.respondError(c, fiber.StatusInternalServerError, "failed to issue coupon")
+				}
+
+				coupon, err := queries.CreateCouponIfNotExists(ctx, db.CreateCouponIfNotExistsParams{
+					ID:          uuid.New(),
+					UserID:      claims.UserID,
+					ChallengeID: session.ChallengeID,
+					SessionID:   session.ID,
+					Code:        code,
+					Status:      "active",
+				})
+				if err != nil {
+					return h.respondError(c, fiber.StatusInternalServerError, "failed to issue coupon")
+				}
+
+				if err := queries.MarkChallengeRegistrationCompletedIfActive(ctx, db.MarkChallengeRegistrationCompletedIfActiveParams{
+					UserID:      claims.UserID,
+					ChallengeID: session.ChallengeID,
+				}); err != nil {
+					return h.respondError(c, fiber.StatusInternalServerError, "failed to finalize challenge")
+				}
+
+				result.CouponCode = coupon.Code
+				result.CouponStatus = coupon.Status
+			}
 		}
 
 		response.Sessions = append(response.Sessions, result)
