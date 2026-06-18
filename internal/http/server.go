@@ -69,6 +69,7 @@ func NewServer(cfg config.Config, queries *db.Queries, pool *pgxpool.Pool, redis
 
 	challenges := protected.Group("/challenges")
 	challenges.Get("", handler.ListChallenges)
+	challenges.Get("/registrations", handler.ListUserChallengeRegistrations)
 	challenges.Post("/:id/register", handler.RegisterChallenge)
 	challenges.Post("/:id", middleware.RequireRole("merchant", "admin"), handler.UpdateChallenge)
 	challenges.Post("", middleware.RequireRole("merchant", "admin"), handler.CreateChallenge)

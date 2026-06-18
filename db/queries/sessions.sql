@@ -16,7 +16,7 @@ WHERE id = $1 AND user_id = $2;
 SELECT s.id, s.user_id, s.challenge_id, s.start_time, s.start_lat, s.start_lng,
        s.steps_start, s.miles_start, s.distance_miles, s.status, s.public_key,
        c.title AS challenge_title, c.target_miles, c.expires_at,
-       cr.status AS registration_status
+       cr.status AS registration_status, cr.distance_covered
 FROM sessions s
 JOIN challenges c ON c.id = s.challenge_id
 JOIN challenge_registrations cr ON cr.challenge_id = s.challenge_id AND cr.user_id = s.user_id

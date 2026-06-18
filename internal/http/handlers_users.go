@@ -9,9 +9,9 @@ import (
 
 	"bytes"
 	"encoding/base64"
-	"image/png"
 	"github.com/boombuler/barcode"
 	"github.com/boombuler/barcode/code128"
+	"image/png"
 
 	db "one-more-mile/server/internal/sqlc"
 )

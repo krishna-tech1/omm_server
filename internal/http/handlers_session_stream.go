@@ -44,18 +44,19 @@ const (
 )
 
 type sessionStreamMeta struct {
-	SessionID      uuid.UUID `json:"session_id"`
-	UserID         uuid.UUID `json:"user_id"`
-	ChallengeID    uuid.UUID `json:"challenge_id"`
-	ChallengeTitle string    `json:"challenge_title"`
-	TargetMiles    float64   `json:"target_miles"`
-	PublicKey      string    `json:"public_key"`
-	StartLat       float64   `json:"start_lat"`
-	StartLng       float64   `json:"start_lng"`
-	StepsStart     int32     `json:"steps_start"`
-	MilesStart     float64   `json:"miles_start"`
-	DistanceMiles  float64   `json:"distance_miles"`
-	ExpiresAt      time.Time `json:"expires_at"`
+	SessionID         uuid.UUID `json:"session_id"`
+	UserID            uuid.UUID `json:"user_id"`
+	ChallengeID       uuid.UUID `json:"challenge_id"`
+	ChallengeTitle    string    `json:"challenge_title"`
+	TargetMiles       float64   `json:"target_miles"`
+	PublicKey         string    `json:"public_key"`
+	StartLat          float64   `json:"start_lat"`
+	StartLng          float64   `json:"start_lng"`
+	StepsStart        int32     `json:"steps_start"`
+	MilesStart        float64   `json:"miles_start"`
+	DistanceMiles     float64   `json:"distance_miles"`
+	BaseDistanceMiles float64   `json:"base_distance_miles"` // accumulated from previous sessions
+	ExpiresAt         time.Time `json:"expires_at"`
 }
 
 type sessionStreamState struct {
@@ -202,7 +203,7 @@ func (h *Handler) StreamSession(conn *websocket.Conn) {
 			Type:          streamTypeProgress,
 			SessionID:     meta.SessionID,
 			ChallengeID:   meta.ChallengeID,
-			DistanceMiles: roundMiles(state.DistanceMiles),
+			DistanceMiles: roundMiles(state.DistanceMiles + meta.BaseDistanceMiles),
 			TargetMiles:   meta.TargetMiles,
 			Steps:         state.StepsLast,
 			Seq:           state.LastSeq,
@@ -337,7 +338,7 @@ func (h *Handler) acceptStreamPoint(ctx context.Context, meta sessionStreamMeta,
 		return nil, false, errors.New("failed to save session stream state")
 	}
 
-	if !state.Completed && state.DistanceMiles >= meta.TargetMiles {
+	if !state.Completed && (state.DistanceMiles+meta.BaseDistanceMiles) >= meta.TargetMiles {
 		result, err := h.completeChallengeFromStream(ctx, meta, *state)
 		if err != nil {
 			return nil, true, err
@@ -370,18 +371,19 @@ func (h *Handler) getSessionStreamMeta(ctx context.Context, sessionID, userID uu
 	}
 
 	meta := sessionStreamMeta{
-		SessionID:      row.ID,
-		UserID:         row.UserID,
-		ChallengeID:    row.ChallengeID,
-		ChallengeTitle: row.ChallengeTitle,
-		TargetMiles:    row.TargetMiles,
-		PublicKey:      row.PublicKey,
-		StartLat:       row.StartLat,
-		StartLng:       row.StartLng,
-		StepsStart:     row.StepsStart,
-		MilesStart:     row.MilesStart,
-		DistanceMiles:  row.DistanceMiles,
-		ExpiresAt:      fromPgTimestamptz(row.ExpiresAt),
+		SessionID:         row.ID,
+		UserID:            row.UserID,
+		ChallengeID:       row.ChallengeID,
+		ChallengeTitle:    row.ChallengeTitle,
+		TargetMiles:       row.TargetMiles,
+		PublicKey:         row.PublicKey,
+		StartLat:          row.StartLat,
+		StartLng:          row.StartLng,
+		StepsStart:        row.StepsStart,
+		MilesStart:        row.MilesStart,
+		DistanceMiles:     row.DistanceMiles,
+		BaseDistanceMiles: row.DistanceCovered,
+		ExpiresAt:         fromPgTimestamptz(row.ExpiresAt),
 	}
 	if meta.TargetMiles <= 0 {
 		return sessionStreamMeta{}, errors.New("invalid challenge target")
@@ -487,6 +489,15 @@ func (h *Handler) completeChallengeFromStream(ctx context.Context, meta sessionS
 		DistanceMiles: state.DistanceMiles,
 	}); err != nil {
 		return nil, errors.New("failed to update session progress")
+	}
+
+	// Accumulate this session's distance onto the registration
+	if err := queries.AddRegistrationDistance(ctx, db.AddRegistrationDistanceParams{
+		ChallengeID:     meta.ChallengeID,
+		UserID:          meta.UserID,
+		DistanceCovered: state.DistanceMiles,
+	}); err != nil {
+		return nil, errors.New("failed to update challenge progress")
 	}
 
 	if err := queries.MarkChallengeRegistrationCompletedIfActive(ctx, db.MarkChallengeRegistrationCompletedIfActiveParams{
@@ -673,7 +684,7 @@ func (h *Handler) SyncSessionPoints(c *fiber.Ctx) error {
 		Type:          streamTypeProgress,
 		SessionID:     meta.SessionID,
 		ChallengeID:   meta.ChallengeID,
-		DistanceMiles: roundMiles(state.DistanceMiles),
+		DistanceMiles: roundMiles(state.DistanceMiles + meta.BaseDistanceMiles),
 		TargetMiles:   meta.TargetMiles,
 		Steps:         state.StepsLast,
 		Seq:           state.LastSeq,

@@ -101,12 +101,42 @@ func (h *Handler) RegisterChallenge(c *fiber.Ctx) error {
 
 	registeredAt := fromPgTimestamptz(registration.RegisteredAt)
 	return c.JSON(fiber.Map{
-		"id":            registration.ID,
-		"challenge_id":  registration.ChallengeID,
-		"user_id":       registration.UserID,
-		"registered_at": registeredAt,
-		"status":        registration.Status,
+		"id":               registration.ID,
+		"challenge_id":     registration.ChallengeID,
+		"user_id":          registration.UserID,
+		"registered_at":    registeredAt,
+		"status":           registration.Status,
+		"distance_covered": registration.DistanceCovered,
 	})
+}
+
+func (h *Handler) ListUserChallengeRegistrations(c *fiber.Ctx) error {
+	claims, ok := getClaims(c)
+	if !ok {
+		return h.respondError(c, fiber.StatusUnauthorized, "unauthorized")
+	}
+
+	ctx, cancel := h.requestContext()
+	defer cancel()
+
+	registrations, err := h.db.GetChallengeRegistrationsForUser(ctx, claims.UserID)
+	if err != nil {
+		return h.respondError(c, fiber.StatusInternalServerError, "failed to load registrations")
+	}
+
+	response := make([]fiber.Map, 0, len(registrations))
+	for _, reg := range registrations {
+		response = append(response, fiber.Map{
+			"id":               reg.ID,
+			"challenge_id":     reg.ChallengeID,
+			"user_id":          reg.UserID,
+			"registered_at":    fromPgTimestamptz(reg.RegisteredAt),
+			"status":           reg.Status,
+			"distance_covered": reg.DistanceCovered,
+		})
+	}
+
+	return c.JSON(response)
 }
 
 func (h *Handler) CreateChallenge(c *fiber.Ctx) error {
@@ -253,4 +283,3 @@ func mapChallenge(challenge db.Challenge) challengeResponse {
 		CreatedAt:      fromPgTimestamptz(challenge.CreatedAt),
 	}
 }
-
