@@ -21,7 +21,17 @@ SELECT
     (SELECT COUNT(DISTINCT cr.user_id)
      FROM challenge_registrations cr
      JOIN challenges c ON c.id = cr.challenge_id
-     WHERE c.merchant_id = $1) AS active_customers;
+     WHERE c.merchant_id = $1) AS active_customers,
+    (SELECT
+       CASE WHEN COUNT(DISTINCT cr2.user_id) = 0 THEN 0.0
+       ELSE (SELECT COUNT(DISTINCT cpn.user_id) FROM coupons cpn
+             JOIN challenges c2 ON c2.id = cpn.challenge_id
+             WHERE c2.merchant_id = $1 AND cpn.status = 'redeemed')::double precision
+            / COUNT(DISTINCT cr2.user_id)::double precision
+       END
+     FROM challenge_registrations cr2
+     JOIN challenges c3 ON c3.id = cr2.challenge_id
+     WHERE c3.merchant_id = $1) AS conversion_rate;
 
 -- name: CreateEmployee :one
 INSERT INTO employees (id, merchant_id, user_id, name, phone, code, status)

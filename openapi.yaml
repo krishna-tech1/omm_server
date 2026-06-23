@@ -60,6 +60,8 @@ components:
           type: string
         role:
           type: string
+        is_premium:
+          type: boolean
         created_at:
           type: string
           format: date-time
@@ -258,7 +260,7 @@ components:
           description: Cumulative device step count for the session; must be non-decreasing.
         signature:
           type: string
-          description: Lowercase hex HMAC-SHA256 signature for this point.
+          description: Base64 encoded ECDSA-SHA256 signature for this point.
     SessionStreamProgress:
       type: object
       description: Server-to-client websocket progress message.
@@ -373,6 +375,17 @@ components:
           type: string
         description:
           type: string
+    AdminMerchant:
+      allOf:
+        - $ref: "#/components/schemas/Merchant"
+        - type: object
+          properties:
+            total_redemptions:
+              type: integer
+              format: int64
+            weekly_redemptions:
+              type: integer
+              format: int64
     MerchantDashboard:
       type: object
       properties:
@@ -385,12 +398,19 @@ components:
         active_customers:
           type: integer
           format: int64
+        conversion_rate:
+          type: number
     MerchantChallenge:
       allOf:
         - $ref: "#/components/schemas/Challenge"
         - type: object
           properties:
             participants:
+              type: integer
+              format: int64
+            completion_rate:
+              type: number
+            redeemed_count:
               type: integer
               format: int64
     CreateEmployeeRequest:
@@ -480,6 +500,11 @@ components:
           type: integer
           format: int64
         total_distance_miles:
+          type: number
+        premium_users:
+          type: integer
+          format: int64
+        mrr:
           type: number
     SyncSessionPointsRequest:
       type: object
@@ -601,6 +626,33 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/Coupon"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /users/activity/stats:
+    get:
+      summary: Get user activity stats
+      operationId: userActivityStats
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Activity stats
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  total_duration_seconds:
+                    type: integer
+                    format: int64
+                  weekly_breakdown:
+                    type: object
+                    additionalProperties:
+                      type: number
         "401":
           description: Unauthorized
           content:
@@ -887,7 +939,7 @@ paths:
               schema:
                 type: array
                 items:
-                  $ref: "#/components/schemas/Merchant"
+                  $ref: "#/components/schemas/AdminMerchant"
   /merchants/nearby:
     get:
       summary: List nearby merchants within 30 miles

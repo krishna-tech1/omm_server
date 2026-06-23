@@ -244,7 +244,7 @@ func (h *Handler) ListMerchantChallenges(c *fiber.Ctx) error {
 		return h.respondError(c, fiber.StatusInternalServerError, "failed to load merchant")
 	}
 
-	challenges, err := h.db.ListMerchantChallengesWithCounts(ctx, merchant.ID)
+	challenges, err := h.db.ListMerchantChallengesWithStats(ctx, merchant.ID)
 	if err != nil {
 		return h.respondError(c, fiber.StatusInternalServerError, "failed to load challenges")
 	}
@@ -263,6 +263,8 @@ func (h *Handler) ListMerchantChallenges(c *fiber.Ctx) error {
 			"reward_image_url": challenge.RewardImageUrl,
 			"created_at":       fromPgTimestamptz(challenge.CreatedAt),
 			"participants":     challenge.Participants,
+			"completion_rate":  challenge.CompletionRate,
+			"redeemed_count":   challenge.RedeemedCount,
 		})
 	}
 

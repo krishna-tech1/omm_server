@@ -120,6 +120,55 @@ func (q *Queries) CreateSessionCheckpoint(ctx context.Context, arg CreateSession
 	return i, err
 }
 
+const findStaleSessions = `-- name: FindStaleSessions :many
+SELECT s.id, s.user_id, s.challenge_id, s.start_time, s.end_time, s.start_lat, s.start_lng, s.end_lat, s.end_lng, s.steps_start, s.steps_end, s.miles_start, s.miles_end, s.distance_miles, s.status, s.public_key, s.created_at, s.updated_at FROM sessions s
+LEFT JOIN LATERAL (
+  SELECT MAX(created_at) AS last_checkpoint_at
+  FROM session_checkpoints WHERE session_id = s.id
+) sc ON true
+WHERE s.status = 'active'
+  AND COALESCE(sc.last_checkpoint_at, s.created_at) < NOW() - ($1::int * INTERVAL '1 minute')
+`
+
+func (q *Queries) FindStaleSessions(ctx context.Context, dollar_1 int32) ([]Session, error) {
+	rows, err := q.db.Query(ctx, findStaleSessions, dollar_1)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Session
+	for rows.Next() {
+		var i Session
+		if err := rows.Scan(
+			&i.ID,
+			&i.UserID,
+			&i.ChallengeID,
+			&i.StartTime,
+			&i.EndTime,
+			&i.StartLat,
+			&i.StartLng,
+			&i.EndLat,
+			&i.EndLng,
+			&i.StepsStart,
+			&i.StepsEnd,
+			&i.MilesStart,
+			&i.MilesEnd,
+			&i.DistanceMiles,
+			&i.Status,
+			&i.PublicKey,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getActiveSessionStreamMeta = `-- name: GetActiveSessionStreamMeta :one
 SELECT s.id, s.user_id, s.challenge_id, s.start_time, s.start_lat, s.start_lng,
        s.steps_start, s.miles_start, s.distance_miles, s.status, s.public_key,
@@ -247,6 +296,58 @@ func (q *Queries) GetSessionForUser(ctx context.Context, arg GetSessionForUserPa
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const getUserTotalDuration = `-- name: GetUserTotalDuration :one
+SELECT COALESCE(SUM(EXTRACT(EPOCH FROM (end_time - start_time))), 0)::bigint
+  AS total_duration_seconds
+FROM sessions
+WHERE user_id = $1 AND status IN ('completed', 'suspicious', 'void')
+  AND end_time IS NOT NULL
+`
+
+func (q *Queries) GetUserTotalDuration(ctx context.Context, userID uuid.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, getUserTotalDuration, userID)
+	var total_duration_seconds int64
+	err := row.Scan(&total_duration_seconds)
+	return total_duration_seconds, err
+}
+
+const getUserWeeklyMiles = `-- name: GetUserWeeklyMiles :many
+SELECT
+  TO_CHAR(s.start_time AT TIME ZONE 'UTC', 'DY') AS day_name,
+  COALESCE(SUM(s.distance_miles), 0)::double precision AS miles
+FROM sessions s
+WHERE s.user_id = $1
+  AND s.status IN ('completed', 'suspicious', 'void')
+  AND s.start_time >= NOW() - INTERVAL '7 days'
+GROUP BY day_name, DATE_TRUNC('day', s.start_time AT TIME ZONE 'UTC')
+ORDER BY DATE_TRUNC('day', s.start_time AT TIME ZONE 'UTC')
+`
+
+type GetUserWeeklyMilesRow struct {
+	DayName string  `json:"day_name"`
+	Miles   float64 `json:"miles"`
+}
+
+func (q *Queries) GetUserWeeklyMiles(ctx context.Context, userID uuid.UUID) ([]GetUserWeeklyMilesRow, error) {
+	rows, err := q.db.Query(ctx, getUserWeeklyMiles, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetUserWeeklyMilesRow
+	for rows.Next() {
+		var i GetUserWeeklyMilesRow
+		if err := rows.Scan(&i.DayName, &i.Miles); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const updateSessionEnd = `-- name: UpdateSessionEnd :exec

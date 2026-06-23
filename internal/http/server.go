@@ -1,6 +1,7 @@
 package http
 
 import (
+	"context"
 	"time"
 
 	"github.com/gofiber/contrib/websocket"
@@ -15,7 +16,7 @@ import (
 	db "one-more-mile/server/internal/sqlc"
 )
 
-func NewServer(cfg config.Config, queries *db.Queries, pool *pgxpool.Pool, redisClient *redis.Client) *fiber.App {
+func NewServer(ctx context.Context, cfg config.Config, queries *db.Queries, pool *pgxpool.Pool, redisClient *redis.Client) *fiber.App {
 	app := fiber.New(fiber.Config{
 		AppName:      "omm-server",
 		ReadTimeout:  10 * time.Second,
@@ -28,6 +29,8 @@ func NewServer(cfg config.Config, queries *db.Queries, pool *pgxpool.Pool, redis
 	}
 
 	handler := NewHandler(cfg, queries, pool, redisClient)
+	
+	go handler.RunMaintenanceWorker(ctx)
 
 	app.Get("/health", func(c *fiber.Ctx) error {
 		return c.SendStatus(fiber.StatusOK)
@@ -58,6 +61,7 @@ func NewServer(cfg config.Config, queries *db.Queries, pool *pgxpool.Pool, redis
 	users := protected.Group("/users")
 	users.Post("/profile", handler.UpdateProfile)
 	users.Get("/coupons", handler.ListUserCoupons)
+	users.Get("/activity/stats", handler.UserActivityStats)
 
 	uploads := protected.Group("/uploads")
 	uploads.Post("/presign", handler.PresignUpload)

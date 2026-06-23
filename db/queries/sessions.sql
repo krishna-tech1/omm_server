@@ -51,3 +51,30 @@ SET lat = EXCLUDED.lat,
     speed_mps = EXCLUDED.speed_mps,
     speed_violation = EXCLUDED.speed_violation
 RETURNING id, session_id, lat, lng, recorded_at, steps, distance_meters, speed_mps, speed_violation, created_at;
+
+-- name: GetUserTotalDuration :one
+SELECT COALESCE(SUM(EXTRACT(EPOCH FROM (end_time - start_time))), 0)::bigint
+  AS total_duration_seconds
+FROM sessions
+WHERE user_id = $1 AND status IN ('completed', 'suspicious', 'void')
+  AND end_time IS NOT NULL;
+
+-- name: GetUserWeeklyMiles :many
+SELECT
+  TO_CHAR(s.start_time AT TIME ZONE 'UTC', 'DY') AS day_name,
+  COALESCE(SUM(s.distance_miles), 0)::double precision AS miles
+FROM sessions s
+WHERE s.user_id = $1
+  AND s.status IN ('completed', 'suspicious', 'void')
+  AND s.start_time >= NOW() - INTERVAL '7 days'
+GROUP BY day_name, DATE_TRUNC('day', s.start_time AT TIME ZONE 'UTC')
+ORDER BY DATE_TRUNC('day', s.start_time AT TIME ZONE 'UTC');
+
+-- name: FindStaleSessions :many
+SELECT s.* FROM sessions s
+LEFT JOIN LATERAL (
+  SELECT MAX(created_at) AS last_checkpoint_at
+  FROM session_checkpoints WHERE session_id = s.id
+) sc ON true
+WHERE s.status = 'active'
+  AND COALESCE(sc.last_checkpoint_at, s.created_at) < NOW() - ($1::int * INTERVAL '1 minute');

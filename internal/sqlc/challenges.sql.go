@@ -96,6 +96,20 @@ func (q *Queries) CreateChallenge(ctx context.Context, arg CreateChallengeParams
 	return i, err
 }
 
+const expireOverdueRegistrations = `-- name: ExpireOverdueRegistrations :exec
+UPDATE challenge_registrations cr
+SET status = 'expired'
+FROM challenges c
+WHERE cr.challenge_id = c.id
+  AND cr.status IN ('active', 'pending')
+  AND cr.registered_at + (c.duration_days * INTERVAL '1 day') < NOW()
+`
+
+func (q *Queries) ExpireOverdueRegistrations(ctx context.Context) error {
+	_, err := q.db.Exec(ctx, expireOverdueRegistrations)
+	return err
+}
+
 const getChallengeByID = `-- name: GetChallengeByID :one
 SELECT id, merchant_id, title, description, target_miles, expires_at, created_at, duration_days, reward, reward_image_url
 FROM challenges
@@ -248,42 +262,48 @@ func (q *Queries) ListActiveChallenges(ctx context.Context, expiresAt pgtype.Tim
 	return items, nil
 }
 
-const listMerchantChallengesWithCounts = `-- name: ListMerchantChallengesWithCounts :many
-SELECT c.id, c.merchant_id, c.title, c.description, c.target_miles, c.expires_at, c.duration_days, c.reward, c.reward_image_url, c.created_at,
-       COALESCE(r.participants, 0) AS participants
+const listMerchantChallengesWithStats = `-- name: ListMerchantChallengesWithStats :many
+SELECT c.id, c.merchant_id, c.title, c.description, c.target_miles, c.expires_at, c.created_at, c.duration_days, c.reward, c.reward_image_url,
+  (SELECT COUNT(*) FROM challenge_registrations cr
+   WHERE cr.challenge_id = c.id) AS participants,
+  (SELECT CASE WHEN COUNT(*) = 0 THEN 0.0
+   ELSE COUNT(*) FILTER (WHERE cr.status = 'completed')::double precision
+        / COUNT(*)::double precision END
+   FROM challenge_registrations cr
+   WHERE cr.challenge_id = c.id) AS completion_rate,
+  (SELECT COUNT(*) FROM coupon_redemptions crd
+   JOIN coupons cpn ON cpn.id = crd.coupon_id
+   WHERE cpn.challenge_id = c.id) AS redeemed_count
 FROM challenges c
-LEFT JOIN (
-    SELECT challenge_id, COUNT(*) AS participants
-    FROM challenge_registrations
-    GROUP BY challenge_id
-) r ON r.challenge_id = c.id
 WHERE c.merchant_id = $1
 ORDER BY c.created_at DESC
 `
 
-type ListMerchantChallengesWithCountsRow struct {
+type ListMerchantChallengesWithStatsRow struct {
 	ID             uuid.UUID          `json:"id"`
 	MerchantID     uuid.UUID          `json:"merchant_id"`
 	Title          string             `json:"title"`
 	Description    string             `json:"description"`
 	TargetMiles    float64            `json:"target_miles"`
 	ExpiresAt      pgtype.Timestamptz `json:"expires_at"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
 	DurationDays   int32              `json:"duration_days"`
 	Reward         string             `json:"reward"`
 	RewardImageUrl string             `json:"reward_image_url"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
 	Participants   int64              `json:"participants"`
+	CompletionRate interface{}        `json:"completion_rate"`
+	RedeemedCount  int64              `json:"redeemed_count"`
 }
 
-func (q *Queries) ListMerchantChallengesWithCounts(ctx context.Context, merchantID uuid.UUID) ([]ListMerchantChallengesWithCountsRow, error) {
-	rows, err := q.db.Query(ctx, listMerchantChallengesWithCounts, merchantID)
+func (q *Queries) ListMerchantChallengesWithStats(ctx context.Context, merchantID uuid.UUID) ([]ListMerchantChallengesWithStatsRow, error) {
+	rows, err := q.db.Query(ctx, listMerchantChallengesWithStats, merchantID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []ListMerchantChallengesWithCountsRow
+	var items []ListMerchantChallengesWithStatsRow
 	for rows.Next() {
-		var i ListMerchantChallengesWithCountsRow
+		var i ListMerchantChallengesWithStatsRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.MerchantID,
@@ -291,11 +311,13 @@ func (q *Queries) ListMerchantChallengesWithCounts(ctx context.Context, merchant
 			&i.Description,
 			&i.TargetMiles,
 			&i.ExpiresAt,
+			&i.CreatedAt,
 			&i.DurationDays,
 			&i.Reward,
 			&i.RewardImageUrl,
-			&i.CreatedAt,
 			&i.Participants,
+			&i.CompletionRate,
+			&i.RedeemedCount,
 		); err != nil {
 			return nil, err
 		}

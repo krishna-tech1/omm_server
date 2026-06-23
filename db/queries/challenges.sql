@@ -52,15 +52,19 @@ UPDATE challenge_registrations
 SET status = 'completed'
 WHERE user_id = $1 AND challenge_id = $2 AND status <> 'completed';
 
--- name: ListMerchantChallengesWithCounts :many
-SELECT c.id, c.merchant_id, c.title, c.description, c.target_miles, c.expires_at, c.duration_days, c.reward, c.reward_image_url, c.created_at,
-       COALESCE(r.participants, 0) AS participants
+-- name: ListMerchantChallengesWithStats :many
+SELECT c.*,
+  (SELECT COUNT(*) FROM challenge_registrations cr
+   WHERE cr.challenge_id = c.id) AS participants,
+  (SELECT CASE WHEN COUNT(*) = 0 THEN 0.0
+   ELSE COUNT(*) FILTER (WHERE cr.status = 'completed')::double precision
+        / COUNT(*)::double precision END
+   FROM challenge_registrations cr
+   WHERE cr.challenge_id = c.id) AS completion_rate,
+  (SELECT COUNT(*) FROM coupon_redemptions crd
+   JOIN coupons cpn ON cpn.id = crd.coupon_id
+   WHERE cpn.challenge_id = c.id) AS redeemed_count
 FROM challenges c
-LEFT JOIN (
-    SELECT challenge_id, COUNT(*) AS participants
-    FROM challenge_registrations
-    GROUP BY challenge_id
-) r ON r.challenge_id = c.id
 WHERE c.merchant_id = $1
 ORDER BY c.created_at DESC;
 
@@ -76,3 +80,11 @@ WHERE user_id = $1;
 UPDATE challenge_registrations
 SET distance_covered = distance_covered + $3
 WHERE challenge_id = $1 AND user_id = $2;
+
+-- name: ExpireOverdueRegistrations :exec
+UPDATE challenge_registrations cr
+SET status = 'expired'
+FROM challenges c
+WHERE cr.challenge_id = c.id
+  AND cr.status IN ('active', 'pending')
+  AND cr.registered_at + (c.duration_days * INTERVAL '1 day') < NOW();

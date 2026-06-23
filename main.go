@@ -19,7 +19,9 @@ func main() {
 		log.Fatal(err)
 	}
 
-	ctx := context.Background()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	pool, err := infra.NewPool(ctx, cfg.DatabaseURL)
 	if err != nil {
 		log.Fatal(err)
@@ -33,7 +35,7 @@ func main() {
 	defer redisClient.Close()
 
 	queries := db.New(pool)
-	app := http.NewServer(cfg, queries, pool, redisClient)
+	app := http.NewServer(ctx, cfg, queries, pool, redisClient)
 
 	go func() {
 		if err := app.Listen(":" + cfg.Port); err != nil {
@@ -45,5 +47,6 @@ func main() {
 	signal.Notify(shutdown, os.Interrupt, syscall.SIGTERM)
 	<-shutdown
 
+	cancel() // cancel the context to stop background workers
 	_ = app.Shutdown()
 }

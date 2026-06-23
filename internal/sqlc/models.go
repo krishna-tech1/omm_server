@@ -125,6 +125,16 @@ type MerchantCategory struct {
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 }
 
+type Payment struct {
+	ID                    uuid.UUID          `json:"id"`
+	UserID                uuid.UUID          `json:"user_id"`
+	StripePaymentIntentID string             `json:"stripe_payment_intent_id"`
+	AmountCents           int32              `json:"amount_cents"`
+	Currency              string             `json:"currency"`
+	Status                string             `json:"status"`
+	CreatedAt             pgtype.Timestamptz `json:"created_at"`
+}
+
 type Session struct {
 	ID            uuid.UUID          `json:"id"`
 	UserID        uuid.UUID          `json:"user_id"`
