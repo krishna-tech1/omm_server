@@ -17,6 +17,7 @@ type Config struct {
 	TokenTTL               time.Duration
 	RedisUrl               string
 	SessionStreamTTL       time.Duration
+	StaleSessionTimeoutMinutes int
 	MaxGPSPointAge         time.Duration
 	MaxGPSPointFutureSkew  time.Duration
 	MaxGPSSpeedMPH         float64
@@ -69,6 +70,12 @@ func Load() (Config, error) {
 		return Config{}, err
 	}
 	cfg.SessionStreamTTL = time.Duration(sessionStreamTTLMinutes) * time.Minute
+
+	staleSessionTimeoutMinutes, err := strconv.Atoi(getEnv("STALE_SESSION_TIMEOUT_MINUTES", "30"))
+	if err != nil {
+		return Config{}, err
+	}
+	cfg.StaleSessionTimeoutMinutes = staleSessionTimeoutMinutes
 
 	maxGPSPointAgeSeconds, err := strconv.Atoi(getEnv("MAX_GPS_POINT_AGE_SECONDS", "300"))
 	if err != nil {

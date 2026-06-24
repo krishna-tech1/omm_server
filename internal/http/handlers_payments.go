@@ -9,6 +9,8 @@ import (
 	"github.com/stripe/stripe-go/v78"
 	"github.com/stripe/stripe-go/v78/paymentintent"
 	"github.com/stripe/stripe-go/v78/webhook"
+
+	db "one-more-mile/server/internal/sqlc"
 )
 
 type createIntentRequest struct {
@@ -88,6 +90,17 @@ func (h *Handler) StripeWebhook(c *fiber.Ctx) error {
 					log.Printf("Failed to upgrade user %v to premium: %v", userID, err)
 				} else {
 					log.Printf("Successfully upgraded user %v to premium via Stripe", userID)
+					
+					_, err = h.db.CreatePayment(ctx, db.CreatePaymentParams{
+						UserID:                userID,
+						StripePaymentIntentID: pi.ID,
+						AmountCents:           int32(pi.Amount),
+						Currency:              string(pi.Currency),
+						Status:                string(pi.Status),
+					})
+					if err != nil {
+						log.Printf("Failed to record payment for user %v: %v", userID, err)
+					}
 				}
 			}
 		}

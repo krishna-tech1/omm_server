@@ -9,6 +9,7 @@ import (
 	"context"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const adminStats = `-- name: AdminStats :one
@@ -16,19 +17,26 @@ SELECT
     (SELECT COUNT(*) FROM users) AS total_users,
     (SELECT COUNT(*) FROM merchants) AS total_merchants,
     (SELECT COALESCE(SUM(distance_miles), 0)::double precision FROM sessions
-     WHERE status IN ('completed', 'suspicious', 'void')) AS total_distance_miles
+     WHERE status IN ('completed', 'suspicious', 'void')) AS total_distance_miles,
+    (SELECT COUNT(*) FROM users WHERE is_premium = true) AS premium_users
 `
 
 type AdminStatsRow struct {
 	TotalUsers         int64   `json:"total_users"`
 	TotalMerchants     int64   `json:"total_merchants"`
 	TotalDistanceMiles float64 `json:"total_distance_miles"`
+	PremiumUsers       int64   `json:"premium_users"`
 }
 
 func (q *Queries) AdminStats(ctx context.Context) (AdminStatsRow, error) {
 	row := q.db.QueryRow(ctx, adminStats)
 	var i AdminStatsRow
-	err := row.Scan(&i.TotalUsers, &i.TotalMerchants, &i.TotalDistanceMiles)
+	err := row.Scan(
+		&i.TotalUsers,
+		&i.TotalMerchants,
+		&i.TotalDistanceMiles,
+		&i.PremiumUsers,
+	)
 	return i, err
 }
 
@@ -80,19 +88,44 @@ func (q *Queries) GetAffectedUsersByMerchantBan(ctx context.Context, merchantID 
 	return items, nil
 }
 
-const listAllMerchants = `-- name: ListAllMerchants :many
-SELECT id, owner_user_id, name, category, address_lat, address_lng, logo_url, description, created_at FROM merchants ORDER BY created_at DESC
+const listAllMerchantsWithAnalytics = `-- name: ListAllMerchantsWithAnalytics :many
+SELECT m.id, m.owner_user_id, m.name, m.category, m.address_lat, m.address_lng, m.logo_url, m.description, m.created_at,
+  (SELECT COUNT(*) FROM coupon_redemptions cr
+   JOIN coupons cpn ON cpn.id = cr.coupon_id
+   JOIN challenges c ON c.id = cpn.challenge_id
+   WHERE c.merchant_id = m.id) AS total_redemptions,
+  (SELECT COUNT(*) FROM coupon_redemptions cr
+   JOIN coupons cpn ON cpn.id = cr.coupon_id
+   JOIN challenges c ON c.id = cpn.challenge_id
+   WHERE c.merchant_id = m.id
+     AND cr.redeemed_at >= NOW() - INTERVAL '7 days') AS weekly_redemptions
+FROM merchants m
+ORDER BY m.created_at DESC
 `
 
-func (q *Queries) ListAllMerchants(ctx context.Context) ([]Merchant, error) {
-	rows, err := q.db.Query(ctx, listAllMerchants)
+type ListAllMerchantsWithAnalyticsRow struct {
+	ID                uuid.UUID          `json:"id"`
+	OwnerUserID       uuid.UUID          `json:"owner_user_id"`
+	Name              string             `json:"name"`
+	Category          string             `json:"category"`
+	AddressLat        float64            `json:"address_lat"`
+	AddressLng        float64            `json:"address_lng"`
+	LogoUrl           string             `json:"logo_url"`
+	Description       string             `json:"description"`
+	CreatedAt         pgtype.Timestamptz `json:"created_at"`
+	TotalRedemptions  int64              `json:"total_redemptions"`
+	WeeklyRedemptions int64              `json:"weekly_redemptions"`
+}
+
+func (q *Queries) ListAllMerchantsWithAnalytics(ctx context.Context) ([]ListAllMerchantsWithAnalyticsRow, error) {
+	rows, err := q.db.Query(ctx, listAllMerchantsWithAnalytics)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []Merchant
+	var items []ListAllMerchantsWithAnalyticsRow
 	for rows.Next() {
-		var i Merchant
+		var i ListAllMerchantsWithAnalyticsRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.OwnerUserID,
@@ -103,6 +136,8 @@ func (q *Queries) ListAllMerchants(ctx context.Context) ([]Merchant, error) {
 			&i.LogoUrl,
 			&i.Description,
 			&i.CreatedAt,
+			&i.TotalRedemptions,
+			&i.WeeklyRedemptions,
 		); err != nil {
 			return nil, err
 		}

@@ -37,9 +37,10 @@ type merchantResponse struct {
 }
 
 type merchantDashboardResponse struct {
-	TotalChallenges  int64 `json:"total_challenges"`
-	TotalRedemptions int64 `json:"total_redemptions"`
-	ActiveCustomers  int64 `json:"active_customers"`
+	TotalChallenges  int64   `json:"total_challenges"`
+	TotalRedemptions int64   `json:"total_redemptions"`
+	ActiveCustomers  int64   `json:"active_customers"`
+	ConversionRate   float64 `json:"conversion_rate"`
 }
 
 type employeeResponse struct {
@@ -226,6 +227,7 @@ func (h *Handler) MerchantDashboard(c *fiber.Ctx) error {
 		TotalChallenges:  stats.TotalChallenges,
 		TotalRedemptions: stats.TotalRedemptions,
 		ActiveCustomers:  stats.ActiveCustomers,
+		ConversionRate:   stats.ConversionRate.(float64),
 	})
 }
 

@@ -1,6 +1,7 @@
 package http
 
 import (
+	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -22,6 +23,7 @@ type userResponse struct {
 	Name      string    `json:"name"`
 	AvatarURL string    `json:"avatar_url"`
 	Role      string    `json:"role"`
+	IsPremium bool      `json:"is_premium"`
 	CreatedAt time.Time `json:"created_at"`
 }
 
@@ -32,6 +34,7 @@ func mapUser(user db.User) userResponse {
 		Name:      user.Name,
 		AvatarURL: user.AvatarUrl,
 		Role:      string(user.Role),
+		IsPremium: user.IsPremium,
 		CreatedAt: fromPgTimestamptz(user.CreatedAt),
 	}
 }
@@ -143,4 +146,45 @@ func uuidPtrFromUUID(value pgtype.UUID) *uuid.UUID {
 		return nil
 	}
 	return &parsed
+}
+
+type userActivityStatsResponse struct {
+	TotalDurationSeconds int64              `json:"total_duration_seconds"`
+	WeeklyBreakdown      map[string]float64 `json:"weekly_breakdown"`
+}
+
+func (h *Handler) UserActivityStats(c *fiber.Ctx) error {
+	claims, ok := getClaims(c)
+	if !ok {
+		return h.respondError(c, fiber.StatusUnauthorized, "unauthorized")
+	}
+
+	ctx, cancel := h.requestContext()
+	defer cancel()
+
+	totalDuration, err := h.db.GetUserTotalDuration(ctx, claims.UserID)
+	if err != nil {
+		return h.respondError(c, fiber.StatusInternalServerError, "failed to get total duration")
+	}
+
+	weeklyStats, err := h.db.GetUserWeeklyMiles(ctx, claims.UserID)
+	if err != nil {
+		return h.respondError(c, fiber.StatusInternalServerError, "failed to get weekly stats")
+	}
+
+	weeklyBreakdown := map[string]float64{
+		"SUN": 0, "MON": 0, "TUE": 0, "WED": 0, "THU": 0, "FRI": 0, "SAT": 0,
+	}
+	for _, stat := range weeklyStats {
+		dayStr := strings.ToUpper(stat.DayName)
+		if len(dayStr) > 3 {
+			dayStr = dayStr[:3] // e.g. "SUNDAY" -> "SUN"
+		}
+		weeklyBreakdown[dayStr] = stat.Miles
+	}
+
+	return c.JSON(userActivityStatsResponse{
+		TotalDurationSeconds: totalDuration,
+		WeeklyBreakdown:      weeklyBreakdown,
+	})
 }

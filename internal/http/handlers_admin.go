@@ -9,6 +9,14 @@ import (
 	"github.com/google/uuid"
 )
 
+type adminStatsResponse struct {
+	TotalUsers         int64   `json:"total_users"`
+	TotalMerchants     int64   `json:"total_merchants"`
+	TotalDistanceMiles float64 `json:"total_distance_miles"`
+	PremiumUsers       int64   `json:"premium_users"`
+	MRR                float64 `json:"mrr"`
+}
+
 func (h *Handler) AdminStats(c *fiber.Ctx) error {
 	ctx, cancel := h.requestContext()
 	defer cancel()
@@ -18,21 +26,43 @@ func (h *Handler) AdminStats(c *fiber.Ctx) error {
 		return h.respondError(c, fiber.StatusInternalServerError, "failed to load stats")
 	}
 
-	return c.JSON(stats)
+	mrrCents, err := h.db.GetMRR(ctx)
+	if err != nil {
+		mrrCents = 0 // Ignore error, just default to 0
+	}
+
+	return c.JSON(adminStatsResponse{
+		TotalUsers:         stats.TotalUsers,
+		TotalMerchants:     stats.TotalMerchants,
+		TotalDistanceMiles: stats.TotalDistanceMiles,
+		PremiumUsers:       stats.PremiumUsers,
+		MRR:                float64(mrrCents) / 100.0,
+	})
 }
 
 func (h *Handler) ListAllMerchants(c *fiber.Ctx) error {
 	ctx, cancel := h.requestContext()
 	defer cancel()
 
-	merchants, err := h.db.ListAllMerchants(ctx)
+	merchants, err := h.db.ListAllMerchantsWithAnalytics(ctx)
 	if err != nil {
 		return h.respondError(c, fiber.StatusInternalServerError, "failed to load merchants")
 	}
 
-	response := make([]merchantResponse, 0, len(merchants))
+	response := make([]fiber.Map, 0, len(merchants))
 	for _, m := range merchants {
-		response = append(response, mapMerchant(m))
+		response = append(response, fiber.Map{
+			"id":                 m.ID,
+			"owner_user_id":      m.OwnerUserID,
+			"name":               m.Name,
+			"category":           m.Category,
+			"address_lat":        m.AddressLat,
+			"address_lng":        m.AddressLng,
+			"logo_url":           m.LogoUrl,
+			"description":        m.Description,
+			"total_redemptions":  m.TotalRedemptions,
+			"weekly_redemptions": m.WeeklyRedemptions,
+		})
 	}
 
 	return c.JSON(response)
